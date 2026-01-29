@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Amazon Ads Audit Tool</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>Amazon Ads Audit Tool</h1>
+        <p class="muted">
+          Upload a bulk sheet, review mappings, then explore buckets and search
+          term insights without the clutter.
+        </p>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <section class="card">
+        <h2>1) Upload bulk sheet</h2>
+        <div class="row">
+          <input id="file-input" type="file" accept=".xlsx,.xls" />
+          <button id="reset-btn" class="ghost">Reset</button>
+        </div>
+        <div class="row">
+          <label class="muted" for="brand-input">Brand aliases (comma-separated)</label>
+          <input id="brand-input" type="text" placeholder="e.g. Chaos Club, Chaos" />
+        </div>
+        <div id="file-meta" class="muted"></div>
+      </section>
+
+      <section class="card">
+        <div class="row space-between">
+          <h2>2) Column mapping</h2>
+          <div class="row">
+            <button id="auto-map-btn" class="ghost">Auto-map</button>
+            <button id="save-map-btn" class="ghost">Download mapping</button>
+            <label class="ghost file-btn">
+              Upload mapping
+              <input id="map-upload" type="file" accept=".json" />
+            </label>
+          </div>
+        </div>
+        <p class="muted">
+          Mapping lets you fix column changes without editing code. Adjust per
+          sheet if Amazon renames headers.
+        </p>
+        <div id="mapping-panel" class="mapping-panel"></div>
+      </section>
+
+      <section class="card">
+        <div class="row space-between">
+          <h2>3) Audit dashboard</h2>
+          <div class="row">
+            <button id="export-btn" class="ghost" disabled>Export JSON</button>
+          </div>
+        </div>
+        <div id="health-panel" class="health-panel"></div>
+        <div id="dashboard" class="dashboard muted">
+          Upload a bulk sheet to see results.
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -137,3 +137,6 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Local bulk sheet sample (do not commit)
+bulk-a1jdquqnukr3a5-20260101-20260126-1769549187746.xlsx
