@@ -47,6 +47,18 @@ body {
   align-items: center;
 }
 
+.row input[type="text"],
+.row input[type="password"] {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #d4d6dd;
+  min-width: 200px;
+}
+
+.ai-config {
+  margin-top: 10px;
+}
+
 .space-between {
   justify-content: space-between;
 }
@@ -174,6 +186,86 @@ button:disabled {
   font-size: 16px;
 }
 
+.ai-summary {
+  background: #f6f7fb;
+  border: 1px solid #e1e3eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.ai-summary p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.ai-summary ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.ai-detail {
+  color: #3c3f48;
+}
+
+.ai-action {
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.ai-evidence {
+  color: #5c5f6a;
+  margin-left: 6px;
+}
+
+.report {
+  margin-top: 12px;
+}
+
+.report-header h3 {
+  margin: 0 0 6px;
+}
+
+.report-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e1e3eb;
+}
+
+.report-section h4 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.report-section ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.report-checklist {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #e1e3eb;
+  border-radius: 10px;
+  background: #fafbfe;
+}
+
+.report-checklist h4 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.report-checklist-group h5 {
+  margin: 10px 0 6px;
+  font-size: 14px;
+}
+
+.report-checklist-group ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -248,4 +340,31 @@ th[data-sort-key] {
 
 .kpi strong {
   font-size: 16px;
+}
+
+@media print {
+  body {
+    background: #fff;
+  }
+
+  .app-header,
+  .card:not(.report-card),
+  .no-print {
+    display: none !important;
+  }
+
+  .app-shell {
+    padding: 0 24px 40px;
+    max-width: none;
+  }
+
+  .report-card {
+    box-shadow: none;
+    border: none;
+    padding: 0;
+  }
+
+  .report-section {
+    page-break-inside: avoid;
+  }
 }

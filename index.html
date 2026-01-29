@@ -30,6 +30,7 @@
           <input id="brand-input" type="text" placeholder="e.g. Chaos Club, Chaos" />
         </div>
         <div id="file-meta" class="muted"></div>
+        <div id="file-warning" class="muted"></div>
       </section>
 
       <section class="card">
@@ -51,9 +52,33 @@
         <div id="mapping-panel" class="mapping-panel"></div>
       </section>
 
+      <section class="card report-card">
+        <div class="row space-between">
+          <h2>3) AI summaries</h2>
+          <div class="row no-print">
+            <button id="ai-generate-btn" class="ghost" disabled>
+              Generate summaries
+            </button>
+            <button id="ai-print-btn" class="ghost" disabled>
+              Print report
+            </button>
+          </div>
+        </div>
+        <div class="row ai-config no-print">
+          <label class="muted" for="ai-key-input">OpenAI API key</label>
+          <input id="ai-key-input" type="password" placeholder="sk-..." />
+          <label class="muted" for="ai-model-input">Model</label>
+          <input id="ai-model-input" type="text" value="gpt-5-mini" />
+        </div>
+        <div id="ai-status" class="muted"></div>
+        <div id="ai-report" class="report muted">
+          Generate summaries to see the report.
+        </div>
+      </section>
+
       <section class="card">
         <div class="row space-between">
-          <h2>3) Audit dashboard</h2>
+          <h2>4) Audit dashboard</h2>
           <div class="row">
             <button id="export-btn" class="ghost" disabled>Export JSON</button>
           </div>
@@ -65,6 +90,17 @@
       </section>
     </main>
 
+    <script>
+      if (window.location.protocol === "file:") {
+        const warning = document.getElementById("file-warning");
+        if (warning) {
+          warning.textContent =
+            "This app uses ES modules and must be served over http(s). " +
+            "Run a local server (e.g. `python -m http.server`) and open " +
+            "http://localhost:8000/index.html.";
+        }
+      }
+    </script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

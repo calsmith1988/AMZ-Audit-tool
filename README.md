@@ -19,6 +19,13 @@ audit summaries for Sponsored Products, Sponsored Brands, and Sponsored Display.
 - ACoS is computed from spend and sales.
 - CVR is computed from orders and clicks.
 - Search term uniqueness uses a keyword/ASIN set derived from the bulk sheet.
+- Optional AI snippet storage lives in `snippets.json` (repo root). You can append
+  bucket-level insight snippets there without affecting runtime performance yet.
+  Each entry uses:
+  - `bucketKey` (e.g. `matchTypeBuckets`, `keywordBuckets`)
+  - `adType` (`SP`, `SB`, `SD`)
+  - `snippet` (your insight text)
+  - `tags` (array like `winner`, `issue`, `discrepancy`, `efficiency`, `waste`)
 
 ## Tests
 

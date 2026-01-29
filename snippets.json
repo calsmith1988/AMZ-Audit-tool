@@ -1,0 +1,206 @@
+[
+  {
+    "bucketKey": "campaignBuckets",
+    "adType": "SP",
+    "snippet": "Campaigns in the 0-10% ACoS bucket drive a disproportionate share of sales; consider shifting budget toward these winners.",
+    "tags": ["winner", "efficiency"]
+  },
+  {
+    "bucketKey": "matchTypeBuckets",
+    "adType": "SP",
+    "snippet": "Broad match is absorbing high spend with weaker efficiency relative to Exact; tighten negatives and reallocate budget to Exact.",
+    "tags": ["issue", "waste"]
+  },
+  {
+    "bucketKey": "keywordBuckets",
+    "adType": "SB",
+    "snippet": "Keyword ACoS sits below account average while maintaining sales share; scale these terms before expanding new targets.",
+    "tags": ["winner", "opportunity"]
+  },
+  {
+    "bucketKey": "asinBuckets",
+    "adType": "SD",
+    "snippet": "ASIN targets show stronger RoAS than other buckets; expand ASIN coverage to grow efficient sales.",
+    "tags": ["winner", "opportunity"]
+  },
+  {
+    "bucketKey": "pausedBuckets",
+    "adType": "SP",
+    "snippet": "Paused targets still show residual spend; verify status sync and ensure budget is not leaking into inactive entities.",
+    "tags": ["issue", "discrepancy"]
+  },
+  {
+    "bucketKey": "placementBuckets",
+    "adType": "SP",
+    "snippet": "TODO: Add placement-level insight for SP.",
+    "tags": ["efficiency"]
+  },
+  {
+    "bucketKey": "biddingStrategyBuckets",
+    "adType": "SP",
+    "snippet": "TODO: Add bidding strategy insight for SP.",
+    "tags": ["discrepancy"]
+  },
+  {
+    "bucketKey": "uniqueKeywords",
+    "adType": "SP",
+    "snippet": "TODO: Add unique keyword insight for SP search terms.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "uniqueAsins",
+    "adType": "SP",
+    "snippet": "TODO: Add unique ASIN insight for SP search terms.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "campaignBuckets",
+    "adType": "SB",
+    "snippet": "TODO: Add campaign bucket insight for SB.",
+    "tags": ["efficiency"]
+  },
+  {
+    "bucketKey": "matchTypeBuckets",
+    "adType": "SB",
+    "snippet": "TODO: Add match type insight for SB.",
+    "tags": ["discrepancy"]
+  },
+  {
+    "bucketKey": "keywordBuckets",
+    "adType": "SB",
+    "snippet": "TODO: Add keyword bucket insight for SB.",
+    "tags": ["winner"]
+  },
+  {
+    "bucketKey": "asinBuckets",
+    "adType": "SB",
+    "snippet": "TODO: Add ASIN bucket insight for SB.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "pausedBuckets",
+    "adType": "SB",
+    "snippet": "TODO: Add paused entity insight for SB.",
+    "tags": ["issue"]
+  },
+  {
+    "bucketKey": "placementBuckets",
+    "adType": "SB",
+    "snippet": "TODO: Add placement insight for SB.",
+    "tags": ["efficiency"]
+  },
+  {
+    "bucketKey": "uniqueKeywords",
+    "adType": "SB",
+    "snippet": "TODO: Add unique keyword insight for SB search terms.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "uniqueAsins",
+    "adType": "SB",
+    "snippet": "TODO: Add unique ASIN insight for SB search terms.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "campaignBuckets",
+    "adType": "SD",
+    "snippet": "TODO: Add campaign bucket insight for SD.",
+    "tags": ["efficiency"]
+  },
+  {
+    "bucketKey": "matchTypeBuckets",
+    "adType": "SD",
+    "snippet": "TODO: Add match type insight for SD.",
+    "tags": ["discrepancy"]
+  },
+  {
+    "bucketKey": "keywordBuckets",
+    "adType": "SD",
+    "snippet": "TODO: Add keyword bucket insight for SD.",
+    "tags": ["winner"]
+  },
+  {
+    "bucketKey": "asinBuckets",
+    "adType": "SD",
+    "snippet": "TODO: Add ASIN bucket insight for SD.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "pausedBuckets",
+    "adType": "SD",
+    "snippet": "TODO: Add paused entity insight for SD.",
+    "tags": ["issue"]
+  },
+  {
+    "bucketKey": "placementBuckets",
+    "adType": "SD",
+    "snippet": "TODO: Add placement insight for SD.",
+    "tags": ["efficiency"]
+  },
+  {
+    "bucketKey": "uniqueKeywords",
+    "adType": "SD",
+    "snippet": "TODO: Add unique keyword insight for SD search terms.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "uniqueAsins",
+    "adType": "SD",
+    "snippet": "TODO: Add unique ASIN insight for SD search terms.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "brandedBucket",
+    "adType": "SP",
+    "snippet": "TODO: Add branded vs non-branded performance insight for SP.",
+    "tags": ["discrepancy"]
+  },
+  {
+    "bucketKey": "brandedBucket",
+    "adType": "SB",
+    "snippet": "TODO: Add branded vs non-branded performance insight for SB.",
+    "tags": ["discrepancy"]
+  },
+  {
+    "bucketKey": "matchTypeMixFlag",
+    "adType": "SP",
+    "snippet": "TODO: Add match type mix insight for SP.",
+    "tags": ["issue"]
+  },
+  {
+    "bucketKey": "matchTypeMixFlag",
+    "adType": "SB",
+    "snippet": "TODO: Add match type mix insight for SB.",
+    "tags": ["issue"]
+  },
+  {
+    "bucketKey": "sbVideoPresence",
+    "adType": "SB",
+    "snippet": "TODO: Add SB video presence insight.",
+    "tags": ["opportunity"]
+  },
+  {
+    "bucketKey": "accountSummary",
+    "adType": "ALL",
+    "snippet": "TODO: Add account-level summary across SP, SB, and SD.",
+    "tags": ["efficiency"]
+  },
+  {
+    "bucketKey": "accountWinners",
+    "adType": "ALL",
+    "snippet": "TODO: Add account-level winners to scale.",
+    "tags": ["winner"]
+  },
+  {
+    "bucketKey": "accountIssues",
+    "adType": "ALL",
+    "snippet": "TODO: Add account-level issues or wasted spend.",
+    "tags": ["issue", "waste"]
+  },
+  {
+    "bucketKey": "accountBudgetAllocation",
+    "adType": "ALL",
+    "snippet": "TODO: Add account-level budget allocation insight.",
+    "tags": ["discrepancy"]
+  }
+]
