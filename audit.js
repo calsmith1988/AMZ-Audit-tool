@@ -43,7 +43,7 @@ export const DEFAULT_MAPPING = {
   adGroupServingStatusInfo: ["Ad group serving status (Informational only)"],
   placement: ["Placement"],
   biddingStrategy: ["Bidding strategy"],
-  campaignName: ["Campaign name", "Campaign name (Informational only)"],
+  campaignName: ["Campaign name (Informational only)", "Campaign name"],
   adGroupName: ["Ad group name", "Ad group name (Informational only)"],
   campaignId: ["Campaign ID"],
   adGroupId: ["Ad group ID"],
@@ -171,7 +171,11 @@ export function buildAuditResults(datasets, options = {}) {
       .filter((set) => set.def.kind === "searchTerm")
       .flatMap((set) => set.rows);
 
-    const pausedBucket = buildPausedBucketFromRows(campaignRows, adType);
+    const pausedBucket = buildPausedBucketFromRows(
+      campaignRows,
+      adType,
+      accountTotals
+    );
     const enabledRows = filterPausedRows(campaignRows, pausedBucket.index, adType);
     const totals = computeSummary(campaignRows);
     const enabledSummary = computeSummary(enabledRows);
@@ -184,22 +188,32 @@ export function buildAuditResults(datasets, options = {}) {
         ? enabledSummary.sales / accountTotals.sales
         : null,
     };
-    const campaignBuckets = bucketByEntity(
+    const campaignBuckets = bucketByEntityWithDetails(
       enabledRows,
-      (row) => row.campaignKey
+      (row) => row.campaignKey,
+      (row) => row.campaignName || row.campaignId || row.campaignKey || "Unmapped",
+      accountTotals
     );
-    const keywordBuckets = bucketByEntity(
+    const keywordBuckets = bucketByEntityWithDetails(
       enabledRows.filter((row) => row.keywordText),
-      (row) => normalizeValue(row.keywordText)
+      (row) => normalizeValue(row.keywordText),
+      (row) => row.keywordText || "Unmapped",
+      accountTotals
     );
-    const asinBuckets = bucketByEntity(
+    const asinBuckets = bucketByEntityWithDetails(
       enabledRows.filter((row) => row.asinTarget),
-      (row) => row.asinTarget
+      (row) => row.asinTarget,
+      (row) => row.asinTarget || "Unmapped",
+      accountTotals
     );
-    const matchTypeBuckets = bucketByMatchType(enabledRows, adType);
-    const placementBuckets = bucketByPlacement(enabledRows, adType);
+    const matchTypeBuckets = bucketByMatchType(enabledRows, adType, accountTotals);
+    const placementBuckets = bucketByPlacement(
+      enabledRows,
+      adType,
+      accountTotals
+    );
     const biddingStrategyBuckets =
-      adType === "SP" ? bucketByBiddingStrategy(enabledRows) : [];
+      adType === "SP" ? bucketByBiddingStrategy(enabledRows, accountTotals) : [];
     const pausedBuckets = pausedBucket;
 
     const searchTermInsights = buildSearchTermInsights(
@@ -274,7 +288,7 @@ export function normalizeRow(row, mapping, adType, kind) {
   const adGroupName = cleanText(row[mapping.adGroupName]);
   const adGroupId = cleanText(row[mapping.adGroupId]);
   const campaignKey = campaignId || campaignName || "";
-  const asinTarget = extractAsins(productTargetingExpression)[0] || "";
+  const asinTarget = extractAsinTarget(productTargetingExpression);
 
   const acos = sales ? spend / sales : null;
   const cpc = clicks ? spend / clicks : null;
@@ -332,6 +346,8 @@ export function computeSummary(rows) {
   return {
     spend: totals.spend,
     sales: totals.sales,
+    clicks: totals.clicks,
+    orders: totals.orders,
     acos: totals.sales ? totals.spend / totals.sales : null,
     cpc: totals.clicks ? totals.spend / totals.clicks : null,
     cvr: totals.clicks ? totals.orders / totals.clicks : null,
@@ -442,7 +458,7 @@ function buildPausedBucketSummary(rows, predicate, keyFn) {
   return { count, summary };
 }
 
-function buildPausedBucketFromRows(rows, adType) {
+function buildPausedBucketFromRows(rows, adType, shareTotals) {
   const pausedIndex = buildPausedIndex(rows, adType);
   const campaigns = buildPausedBucketSummary(
     rows,
@@ -471,15 +487,17 @@ function buildPausedBucketFromRows(rows, adType) {
       isTargetEntity(adType, normalizeValue(row.entity)) && isPaused(row.state),
     (row) => buildTargetKey(row)
   );
+  const details = buildPausedDetails(rows, adType, shareTotals);
   return {
     campaigns,
     adGroups,
     targets,
+    details,
     index: pausedIndex,
   };
 }
 
-function bucketByPlacement(rows, adType) {
+function bucketByPlacement(rows, adType, shareTotals) {
   let placementEntity = "";
   if (adType === "SP") {
     placementEntity = "bidding adjustment";
@@ -494,10 +512,12 @@ function bucketByPlacement(rows, adType) {
     (row) => normalizeValue(row.entity) === placementEntity
   );
   const grouped = groupBy(filtered, (row) => row.placement || "Unmapped");
-  return buildShareRows(grouped);
+  return buildShareRowsWithDetails(grouped, (items) =>
+    buildCampaignDetails(items, shareTotals)
+  );
 }
 
-function bucketByBiddingStrategy(rows) {
+function bucketByBiddingStrategy(rows, shareTotals) {
   const filtered = rows.filter(
     (row) => normalizeValue(row.entity) === "bidding adjustment"
   );
@@ -505,7 +525,9 @@ function bucketByBiddingStrategy(rows) {
     filtered,
     (row) => row.biddingStrategy || "Unmapped"
   );
-  return buildShareRows(grouped);
+  return buildShareRowsWithDetails(grouped, (items) =>
+    buildCampaignDetails(items, shareTotals)
+  );
 }
 
 function buildShareRows(grouped) {
@@ -524,6 +546,27 @@ function buildShareRows(grouped) {
     avgCpc: entry.summary.cpc,
     acos: entry.summary.acos,
     roas: entry.summary.roas,
+  }));
+}
+
+function buildShareRowsWithDetails(grouped, detailBuilder, shareTotals) {
+  const entries = Object.entries(grouped).map(([label, items]) => ({
+    label,
+    summary: computeSummary(items),
+    details: detailBuilder ? detailBuilder(items, shareTotals) : [],
+  }));
+  const totalSpend = entries.reduce((sum, item) => sum + item.summary.spend, 0);
+  const totalSales = entries.reduce((sum, item) => sum + item.summary.sales, 0);
+  return entries.map((entry) => ({
+    label: entry.label,
+    spend: entry.summary.spend,
+    sales: entry.summary.sales,
+    spendPct: totalSpend ? entry.summary.spend / totalSpend : null,
+    salesPct: totalSales ? entry.summary.sales / totalSales : null,
+    avgCpc: entry.summary.cpc,
+    acos: entry.summary.acos,
+    roas: entry.summary.roas,
+    details: entry.details,
   }));
 }
 
@@ -570,7 +613,259 @@ export function bucketTotals(entityTotals) {
     .sort((a, b) => bucketSort(a.bucket) - bucketSort(b.bucket));
 }
 
-export function bucketByMatchType(rows, adType) {
+function bucketByEntityWithDetails(rows, keyFn, labelFn, shareTotals) {
+  const entities = buildEntitySummaries(rows, keyFn, labelFn);
+  return buildBucketRowsWithDetails(entities, shareTotals);
+}
+
+function buildEntitySummaries(rows, keyFn, labelFn) {
+  const grouped = groupBy(rows, keyFn);
+  return Object.entries(grouped).map(([key, items]) => ({
+    key,
+    label: labelFn ? labelFn(items[0], key, items) : key,
+    summary: computeSummary(items),
+  }));
+}
+
+function bucketLabelForSummary(summary) {
+  if (summary.sales === 0 && summary.spend > 0) {
+    return "No Sales";
+  }
+  if (summary.acos || summary.acos === 0) {
+    return bucketLabel(summary.acos);
+  }
+  return "";
+}
+
+function buildBucketRowsWithDetails(entities, shareTotals) {
+  const totalsByBucket = {};
+  entities.forEach((entity) => {
+    const bucket = bucketLabelForSummary(entity.summary);
+    if (!bucket) {
+      return;
+    }
+    totalsByBucket[bucket] = totalsByBucket[bucket] || {
+      spend: 0,
+      sales: 0,
+      clicks: 0,
+      items: [],
+    };
+    totalsByBucket[bucket].spend += entity.summary.spend;
+    totalsByBucket[bucket].sales += entity.summary.sales;
+    totalsByBucket[bucket].clicks += entity.summary.clicks || 0;
+    totalsByBucket[bucket].items.push(entity);
+  });
+
+  const totalSpend = entities.reduce((sum, item) => sum + item.summary.spend, 0);
+  const totalSales = entities.reduce((sum, item) => sum + item.summary.sales, 0);
+  const shareSpendTotal = shareTotals?.spend ?? totalSpend;
+  const shareSalesTotal = shareTotals?.sales ?? totalSales;
+
+  return Object.entries(totalsByBucket)
+    .map(([bucket, values]) => ({
+      bucket,
+      spend: values.spend,
+      sales: values.sales,
+      spendPct: totalSpend ? values.spend / totalSpend : null,
+      salesPct: totalSales ? values.sales / totalSales : null,
+      avgCpc: values.clicks ? values.spend / values.clicks : null,
+      details: buildDetailRowsFromEntities(
+        values.items,
+        shareSpendTotal,
+        shareSalesTotal
+      ),
+    }))
+    .sort((a, b) => bucketSort(a.bucket) - bucketSort(b.bucket));
+}
+
+function buildDetailRowsFromEntities(entities, shareSpendTotal, shareSalesTotal) {
+  return entities
+    .map((entity) => ({
+      label: entity.label,
+      spend: entity.summary.spend,
+      sales: entity.summary.sales,
+      acos: entity.summary.acos,
+      roas: entity.summary.roas,
+      spendSharePct: shareSpendTotal
+        ? entity.summary.spend / shareSpendTotal
+        : null,
+      salesSharePct: shareSalesTotal
+        ? entity.summary.sales / shareSalesTotal
+        : null,
+    }))
+    .sort((a, b) => (b.spend || 0) - (a.spend || 0));
+}
+
+function buildCampaignDetails(rows, shareTotals) {
+  const entities = buildEntitySummaries(
+    rows,
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key)
+  );
+  const shareSpendTotal = shareTotals?.spend;
+  const shareSalesTotal = shareTotals?.sales;
+  const fallbackSpend = entities.reduce(
+    (sum, item) => sum + item.summary.spend,
+    0
+  );
+  const fallbackSales = entities.reduce(
+    (sum, item) => sum + item.summary.sales,
+    0
+  );
+  return buildDetailRowsFromEntities(
+    entities,
+    shareSpendTotal ?? fallbackSpend,
+    shareSalesTotal ?? fallbackSales
+  );
+}
+
+function buildTargetLabel(row) {
+  if (row.keywordText) {
+    return row.keywordText;
+  }
+  if (row.asinTarget) {
+    return row.asinTarget;
+  }
+  if (row.productTargetingExpression) {
+    return row.productTargetingExpression;
+  }
+  if (row.customerSearchTerm) {
+    return row.customerSearchTerm;
+  }
+  return row.entity || "Unmapped";
+}
+
+function pickCampaignLabel(items, fallbackKey) {
+  const named = items.find((item) => item.campaignName);
+  if (named?.campaignName) {
+    return named.campaignName;
+  }
+  const withId = items.find((item) => item.campaignId);
+  if (withId?.campaignId) {
+    return withId.campaignId;
+  }
+  return fallbackKey || "Unmapped";
+}
+
+function extractAsinTarget(expression) {
+  if (!expression) {
+    return "";
+  }
+  const normalized = String(expression).toLowerCase();
+  if (!normalized.includes("asin")) {
+    return "";
+  }
+  const asins = extractAsins(expression);
+  return asins[0] || "";
+}
+
+function buildTargetDetails(rows, shareTotals) {
+  const entities = buildEntitySummaries(
+    rows,
+    (row) => buildTargetLabel(row),
+    (row) => buildTargetLabel(row)
+  );
+  const shareSpendTotal = shareTotals?.spend;
+  const shareSalesTotal = shareTotals?.sales;
+  const fallbackSpend = entities.reduce(
+    (sum, item) => sum + item.summary.spend,
+    0
+  );
+  const fallbackSales = entities.reduce(
+    (sum, item) => sum + item.summary.sales,
+    0
+  );
+  return buildDetailRowsFromEntities(
+    entities,
+    shareSpendTotal ?? fallbackSpend,
+    shareSalesTotal ?? fallbackSales
+  );
+}
+
+function buildPausedDetails(rows, adType, shareTotals) {
+  const campaignRows = rows.filter(
+    (row) =>
+      normalizeValue(row.entity) === "campaign" &&
+      isPaused(row.campaignStateInfo)
+  );
+  const adGroupRows = rows.filter((row) => {
+    const entity = normalizeValue(row.entity);
+    if (entity !== "ad group") {
+      return false;
+    }
+    if (adType === "SB") {
+      return isAdGroupPausedSb(row.adGroupServingStatusInfo);
+    }
+    return isPaused(row.adGroupStateInfo);
+  });
+  const targetRows = rows.filter(
+    (row) =>
+      isTargetEntity(adType, normalizeValue(row.entity)) && isPaused(row.state)
+  );
+
+  const campaignEntities = buildEntitySummaries(
+    campaignRows,
+    (row) => buildCampaignKey(row),
+    (row) => row.campaignName || row.campaignId || row.campaignKey || "Unmapped"
+  );
+  const adGroupEntities = buildEntitySummaries(
+    adGroupRows,
+    (row) => buildAdGroupKey(row),
+    (row) => row.adGroupName || row.adGroupId || "Unmapped"
+  );
+  const targetEntities = buildEntitySummaries(
+    targetRows,
+    (row) => buildTargetLabel(row),
+    (row) => buildTargetLabel(row)
+  );
+
+  const shareSpendTotal = shareTotals?.spend;
+  const shareSalesTotal = shareTotals?.sales;
+  const campaignSpend = campaignEntities.reduce(
+    (sum, item) => sum + item.summary.spend,
+    0
+  );
+  const campaignSales = campaignEntities.reduce(
+    (sum, item) => sum + item.summary.sales,
+    0
+  );
+  const adGroupSpend = adGroupEntities.reduce(
+    (sum, item) => sum + item.summary.spend,
+    0
+  );
+  const adGroupSales = adGroupEntities.reduce(
+    (sum, item) => sum + item.summary.sales,
+    0
+  );
+  const targetSpend = targetEntities.reduce(
+    (sum, item) => sum + item.summary.spend,
+    0
+  );
+  const targetSales = targetEntities.reduce(
+    (sum, item) => sum + item.summary.sales,
+    0
+  );
+
+  return {
+    campaigns: buildDetailRowsFromEntities(
+      campaignEntities,
+      shareSpendTotal ?? campaignSpend,
+      shareSalesTotal ?? campaignSales
+    ),
+    adGroups: buildDetailRowsFromEntities(
+      adGroupEntities,
+      shareSpendTotal ?? adGroupSpend,
+      shareSalesTotal ?? adGroupSales
+    ),
+    targets: buildDetailRowsFromEntities(
+      targetEntities,
+      shareSpendTotal ?? targetSpend,
+      shareSalesTotal ?? targetSales
+    ),
+  };
+}
+
+export function bucketByMatchType(rows, adType, shareTotals) {
   if (adType === "SD") {
     const filtered = rows.filter((row) =>
       ["contextual targeting", "audience targeting"].includes(
@@ -583,7 +878,7 @@ export function bucketByMatchType(rows, adType) {
         ? "Contextual targeting"
         : "Audience targeting";
     });
-    return buildMatchTypeRows(grouped);
+    return buildMatchTypeRows(grouped, shareTotals);
   }
 
   const grouped = groupBy(
@@ -600,20 +895,22 @@ export function bucketByMatchType(rows, adType) {
     }),
     (row) => row.matchType || "Unmapped"
   );
-  return buildMatchTypeRows(grouped);
+  return buildMatchTypeRows(grouped, shareTotals);
 }
 
-function buildMatchTypeRows(grouped) {
+function buildMatchTypeRows(grouped, shareTotals) {
   const entries = Object.entries(grouped).map(([matchType, items]) => {
     const summary = computeSummary(items);
     const autoBreakdown =
       matchType === "Auto" ? buildAutoBreakdown(items) : [];
     const targetCount = new Set(items.map((item) => buildTargetKey(item))).size;
+    const details = buildTargetDetails(items, shareTotals);
     return {
       matchType,
       summary,
       autoBreakdown,
       targetCount,
+      details,
     };
   });
   const totalSpend = entries.reduce((sum, item) => sum + item.summary.spend, 0);
@@ -629,6 +926,7 @@ function buildMatchTypeRows(grouped) {
     acos: entry.summary.acos,
     roas: entry.summary.roas,
     autoBreakdown: entry.autoBreakdown,
+    details: entry.details,
   }));
 }
 

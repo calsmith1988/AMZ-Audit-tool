@@ -17,12 +17,19 @@ const state = {
   results: null,
   datasets: [],
   brandAliases: [],
+  activeAdType: "",
   ai: {
     apiKey: "",
     model: "gpt-5-mini",
     bucketMap: {},
     report: null,
     status: "",
+  },
+  ui: {
+    collapsedSections: {},
+    expandedRows: {},
+    detailLimits: {},
+    searchTermLimits: {},
   },
 };
 
@@ -33,6 +40,7 @@ const fileMeta = document.getElementById("file-meta");
 const mappingPanel = document.getElementById("mapping-panel");
 const dashboard = document.getElementById("dashboard");
 const healthPanel = document.getElementById("health-panel");
+const summaryStrip = document.getElementById("summary-strip");
 const autoMapBtn = document.getElementById("auto-map-btn");
 const resetBtn = document.getElementById("reset-btn");
 const exportBtn = document.getElementById("export-btn");
@@ -73,13 +81,22 @@ resetBtn.addEventListener("click", () => {
   state.results = null;
   state.datasets = [];
   state.brandAliases = [];
+  state.activeAdType = "";
   state.ai.apiKey = "";
   state.ai.model = "gpt-5-mini";
   state.ai.bucketMap = {};
   state.ai.report = null;
   state.ai.status = "";
+  state.ui.collapsedSections = {};
+  state.ui.expandedRows = {};
+  state.ui.detailLimits = {};
+  state.ui.searchTermLimits = {};
   mappingPanel.innerHTML = "";
   healthPanel.innerHTML = "";
+  if (summaryStrip) {
+    summaryStrip.textContent = "Upload a bulk sheet to see share metrics.";
+    summaryStrip.classList.add("muted");
+  }
   dashboard.textContent = "Upload a bulk sheet to see results.";
   exportBtn.disabled = true;
   aiReport.innerHTML = "Generate summaries to see the report.";
@@ -160,6 +177,53 @@ if (aiPrintBtn) {
 }
 
 dashboard.addEventListener("click", (event) => {
+  const tableMoreBtn = event.target.closest(".table-more");
+  if (tableMoreBtn) {
+    const tableId = tableMoreBtn.dataset.tableId;
+    if (tableId) {
+      state.ui.searchTermLimits[tableId] =
+        (state.ui.searchTermLimits[tableId] || 10) + 10;
+      renderDashboard(state.results);
+    }
+    return;
+  }
+  const showMoreBtn = event.target.closest(".detail-more");
+  if (showMoreBtn) {
+    const tableId = showMoreBtn.dataset.tableId;
+    const rowId = showMoreBtn.dataset.rowId;
+    if (tableId && rowId) {
+      const key = `${tableId}:${rowId}`;
+      const current = state.ui.detailLimits[key] || 10;
+      state.ui.detailLimits[key] = current + 10;
+      renderDashboard(state.results);
+    }
+    return;
+  }
+  const sectionToggle = event.target.closest(".section-toggle");
+  if (sectionToggle) {
+    const sectionId = sectionToggle.dataset.sectionId;
+    if (sectionId) {
+      state.ui.collapsedSections[sectionId] =
+        !state.ui.collapsedSections[sectionId];
+      renderDashboard(state.results);
+    }
+    return;
+  }
+  const rowToggle = event.target.closest(".row-toggle");
+  if (rowToggle) {
+    const tableId = rowToggle.dataset.tableId;
+    const rowId = rowToggle.dataset.rowId;
+    if (tableId && rowId) {
+      const key = `${tableId}:${rowId}`;
+      const nextExpanded = !state.ui.expandedRows[key];
+      state.ui.expandedRows[key] = nextExpanded;
+      if (nextExpanded && !state.ui.detailLimits[key]) {
+        state.ui.detailLimits[key] = 10;
+      }
+      renderDashboard(state.results);
+    }
+    return;
+  }
   const target = event.target.closest("th[data-sort-key]");
   if (!target) {
     return;
@@ -354,11 +418,19 @@ function renderHealthPanel(health) {
 function renderDashboard(results) {
   if (!results || !Object.keys(results.adTypes).length) {
     dashboard.textContent = "No supported sheets were detected.";
+    if (summaryStrip) {
+      summaryStrip.textContent = "No share metrics available.";
+      summaryStrip.classList.add("muted");
+    }
     return;
   }
 
   const adTypes = Object.keys(results.adTypes);
-  let activeType = adTypes[0];
+  let activeType = state.activeAdType || adTypes[0];
+  if (!adTypes.includes(activeType)) {
+    activeType = adTypes[0];
+    state.activeAdType = activeType;
+  }
 
   const tabBar = document.createElement("div");
   tabBar.className = "tab-bar";
@@ -394,22 +466,27 @@ function renderDashboard(results) {
     container.appendChild(
       buildSection(
         "Campaign ACoS buckets",
-        renderBucketTable(data.campaignBuckets, "campaignBuckets"),
-        renderBucketSummary(activeType, "campaignBuckets")
+        renderBucketTable(data.campaignBuckets, "campaignBuckets", {
+          detailLabel: "Campaign",
+        }),
+        renderBucketSummary(activeType, "campaignBuckets"),
+        { sectionId: `${activeType}:campaignBuckets` }
       )
     );
     container.appendChild(
       buildSection(
         "Match type buckets",
         renderMatchTypeTable(data.matchTypeBuckets, "matchTypeBuckets"),
-        renderBucketSummary(activeType, "matchTypeBuckets")
+        renderBucketSummary(activeType, "matchTypeBuckets"),
+        { sectionId: `${activeType}:matchTypeBuckets` }
       )
     );
     container.appendChild(
       buildSection(
         "Paused bucket",
         renderPausedTable(data.pausedBuckets, "pausedBuckets"),
-        renderBucketSummary(activeType, "pausedBuckets")
+        renderBucketSummary(activeType, "pausedBuckets"),
+        { sectionId: `${activeType}:pausedBuckets` }
       )
     );
     if (data.placementBuckets?.length) {
@@ -417,7 +494,8 @@ function renderDashboard(results) {
         buildSection(
           "Placement buckets",
           renderPlacementTable(data.placementBuckets, "placementBuckets"),
-          renderBucketSummary(activeType, "placementBuckets")
+          renderBucketSummary(activeType, "placementBuckets"),
+          { sectionId: `${activeType}:placementBuckets` }
         )
       );
     }
@@ -429,22 +507,29 @@ function renderDashboard(results) {
             data.biddingStrategyBuckets,
             "biddingStrategyBuckets"
           ),
-          renderBucketSummary(activeType, "biddingStrategyBuckets")
+          renderBucketSummary(activeType, "biddingStrategyBuckets"),
+          { sectionId: `${activeType}:biddingStrategyBuckets` }
         )
       );
     }
     container.appendChild(
       buildSection(
         "Keyword ACoS buckets",
-        renderBucketTable(data.keywordBuckets, "keywordBuckets"),
-        renderBucketSummary(activeType, "keywordBuckets")
+        renderBucketTable(data.keywordBuckets, "keywordBuckets", {
+          detailLabel: "Keyword",
+        }),
+        renderBucketSummary(activeType, "keywordBuckets"),
+        { sectionId: `${activeType}:keywordBuckets` }
       )
     );
     container.appendChild(
       buildSection(
         "ASIN ACoS buckets",
-        renderBucketTable(data.asinBuckets, "asinBuckets"),
-        renderBucketSummary(activeType, "asinBuckets")
+        renderBucketTable(data.asinBuckets, "asinBuckets", {
+          detailLabel: "ASIN",
+        }),
+        renderBucketSummary(activeType, "asinBuckets"),
+        { sectionId: `${activeType}:asinBuckets` }
       )
     );
     container.appendChild(
@@ -454,14 +539,16 @@ function renderDashboard(results) {
           data.searchTermInsights.uniqueKeywords,
           "uniqueKeywords"
         ),
-        renderBucketSummary(activeType, "uniqueKeywords")
+        renderBucketSummary(activeType, "uniqueKeywords"),
+        { sectionId: `${activeType}:uniqueKeywords` }
       )
     );
     container.appendChild(
       buildSection(
         "Unique search terms (ASINs)",
         renderSearchTermTable(data.searchTermInsights.uniqueAsins, "uniqueAsins"),
-        renderBucketSummary(activeType, "uniqueAsins")
+        renderBucketSummary(activeType, "uniqueAsins"),
+        { sectionId: `${activeType}:uniqueAsins` }
       )
     );
   }
@@ -472,6 +559,7 @@ function renderDashboard(results) {
     btn.textContent = adType;
     btn.addEventListener("click", () => {
       activeType = adType;
+      state.activeAdType = adType;
       tabBar.querySelectorAll("button").forEach((button) => {
         button.classList.toggle("active", button.textContent === adType);
       });
@@ -480,16 +568,85 @@ function renderDashboard(results) {
     tabBar.appendChild(btn);
   });
 
+  if (summaryStrip) {
+    renderSummaryStrip(results);
+  }
   dashboard.innerHTML = "";
   dashboard.appendChild(tabBar);
   dashboard.appendChild(container);
   renderActive();
 }
 
-function buildSection(title, contentHtml, summaryHtml = "") {
+function renderSummaryStrip(results) {
+  if (!summaryStrip) {
+    return;
+  }
+  const order = ["SP", "SB", "SD"];
+  const entries = order.filter((type) => results.adTypes[type]);
+  if (!entries.length) {
+    summaryStrip.textContent = "No share metrics available.";
+    summaryStrip.classList.add("muted");
+    return;
+  }
+  summaryStrip.classList.remove("muted");
+  summaryStrip.innerHTML = entries
+    .map((type) => {
+      const summary = results.adTypes[type].summary || {};
+      return `
+        <div class="summary-card">
+          <div class="summary-title">${type} Share</div>
+          <div class="summary-circles">
+            ${renderShareCircle("Spend Share", summary.spendSharePct, "blue")}
+            ${renderShareCircle("Sales Share", summary.salesSharePct, "green")}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderShareCircle(label, value, tone) {
+  const safeValue = value ?? null;
+  const pct = clampPercent(safeValue);
+  const display = safeValue === null ? "—" : formatPercent(safeValue);
+  return `
+    <div class="share-circle ${tone}">
+      <div class="circle" style="--pct: ${pct}">
+        <span>${display}</span>
+      </div>
+      <div class="circle-label">${label}</div>
+    </div>
+  `;
+}
+
+function clampPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function buildSection(title, contentHtml, summaryHtml = "", options = {}) {
+  const sectionId = options.sectionId || title;
+  const isCollapsed = !!state.ui.collapsedSections[sectionId];
   const section = document.createElement("div");
-  section.className = "section";
-  section.innerHTML = `<h3>${title}</h3>${summaryHtml}${contentHtml}`;
+  section.className = `section section-collapsible ${
+    isCollapsed ? "is-collapsed" : ""
+  }`;
+  section.innerHTML = `
+    <div class="section-header">
+      <h3>${title}</h3>
+      <button class="section-toggle" data-section-id="${sectionId}" aria-expanded="${
+    !isCollapsed
+  }">
+        <span>${isCollapsed ? "Expand" : "Collapse"}</span>
+        <span class="caret"></span>
+      </button>
+    </div>
+    <div class="section-body">
+      ${summaryHtml}${contentHtml}
+    </div>
+  `;
   return section;
 }
 
@@ -642,10 +799,55 @@ function resetAiSummaries(message) {
   updateAiControls();
 }
 
-function renderBucketTable(rows, tableId) {
+function renderBucketTable(rows, tableId, options = {}) {
   if (!rows.length) {
     return `<div class="muted">No bucket data available.</div>`;
   }
+  const detailLabel = options.detailLabel || "Entity";
+  const detailColumns = [
+    {
+      label: detailLabel,
+      key: "label",
+      accessor: (item) => item.label,
+      render: (item) => escapeHtml(item.label),
+    },
+    {
+      label: "Spend %",
+      key: "spendSharePct",
+      accessor: (item) => item.spendSharePct,
+      render: (item) => formatPercent(item.spendSharePct),
+    },
+    {
+      label: "Sales %",
+      key: "salesSharePct",
+      accessor: (item) => item.salesSharePct,
+      render: (item) => formatPercent(item.salesSharePct),
+    },
+    {
+      label: "Spend",
+      key: "spend",
+      accessor: (item) => item.spend,
+      render: (item) => formatCurrency(item.spend),
+    },
+    {
+      label: "Sales",
+      key: "sales",
+      accessor: (item) => item.sales,
+      render: (item) => formatCurrency(item.sales),
+    },
+    {
+      label: "ACoS",
+      key: "acos",
+      accessor: (item) => item.acos,
+      render: (item) => formatPercent(item.acos),
+    },
+    {
+      label: "RoAS",
+      key: "roas",
+      accessor: (item) => item.roas,
+      render: (item) => formatNumber(item.roas),
+    },
+  ];
   const sortedRows = sortRows(rows, tableId, {
     bucket: (row) => row.bucket,
     spendPct: (row) => row.spendPct,
@@ -658,6 +860,7 @@ function renderBucketTable(rows, tableId) {
     <table data-table-id="${tableId}">
       <thead>
         <tr>
+          <th class="col-toggle"></th>
           ${renderHeader("Bucket", "bucket", tableId)}
           ${renderHeader("Spend %", "spendPct", tableId)}
           ${renderHeader("Sales %", "salesPct", tableId)}
@@ -668,9 +871,11 @@ function renderBucketTable(rows, tableId) {
       </thead>
       <tbody>
         ${sortedRows
-          .map(
-            (row) => `
+          .map((row, index) => {
+            const rowId = buildRowId(`${row.bucket}-${index}`);
+            return `
           <tr>
+            <td class="col-toggle">${renderRowToggle(tableId, rowId)}</td>
             <td><span class="pill">${row.bucket}</span></td>
             <td>${formatPercent(row.spendPct)}</td>
             <td>${formatPercent(row.salesPct)}</td>
@@ -678,8 +883,12 @@ function renderBucketTable(rows, tableId) {
             <td>${formatCurrency(row.sales)}</td>
             <td>${formatCurrency(row.avgCpc)}</td>
           </tr>
-        `
-          )
+          ${renderDetailRow(tableId, rowId, 7, {
+            details: row.details || [],
+            columns: detailColumns,
+          })}
+        `;
+          })
           .join("")}
       </tbody>
     </table>
@@ -690,6 +899,50 @@ function renderMatchTypeTable(rows, tableId) {
   if (!rows.length) {
     return `<div class="muted">No match type data available.</div>`;
   }
+  const detailColumns = [
+    {
+      label: "Target",
+      key: "label",
+      accessor: (item) => item.label,
+      render: (item) => escapeHtml(item.label),
+    },
+    {
+      label: "Spend %",
+      key: "spendSharePct",
+      accessor: (item) => item.spendSharePct,
+      render: (item) => formatPercent(item.spendSharePct),
+    },
+    {
+      label: "Sales %",
+      key: "salesSharePct",
+      accessor: (item) => item.salesSharePct,
+      render: (item) => formatPercent(item.salesSharePct),
+    },
+    {
+      label: "Spend",
+      key: "spend",
+      accessor: (item) => item.spend,
+      render: (item) => formatCurrency(item.spend),
+    },
+    {
+      label: "Sales",
+      key: "sales",
+      accessor: (item) => item.sales,
+      render: (item) => formatCurrency(item.sales),
+    },
+    {
+      label: "ACoS",
+      key: "acos",
+      accessor: (item) => item.acos,
+      render: (item) => formatPercent(item.acos),
+    },
+    {
+      label: "RoAS",
+      key: "roas",
+      accessor: (item) => item.roas,
+      render: (item) => formatNumber(item.roas),
+    },
+  ];
   const sortedRows = sortRows(rows, tableId, {
     matchType: (row) => row.matchType,
     targetCount: (row) => row.targetCount,
@@ -705,6 +958,7 @@ function renderMatchTypeTable(rows, tableId) {
     <table data-table-id="${tableId}">
       <thead>
         <tr>
+          <th class="col-toggle"></th>
           ${renderHeader("Match type", "matchType", tableId)}
           ${renderHeader("Targets", "targetCount", tableId)}
           ${renderHeader("Spend %", "spendPct", tableId)}
@@ -718,9 +972,11 @@ function renderMatchTypeTable(rows, tableId) {
       </thead>
       <tbody>
         ${sortedRows
-          .map(
-            (row) => `
+          .map((row, index) => {
+            const rowId = buildRowId(`${row.matchType}-${index}`);
+            return `
           <tr>
+            <td class="col-toggle">${renderRowToggle(tableId, rowId)}</td>
             <td>${renderMatchTypeLabel(row)}</td>
             <td>${row.targetCount ?? "—"}</td>
             <td>${formatPercent(row.spendPct)}</td>
@@ -731,8 +987,12 @@ function renderMatchTypeTable(rows, tableId) {
             <td>${formatNumber(row.roas)}</td>
             <td>${formatCurrency(row.avgCpc)}</td>
           </tr>
-        `
-          )
+          ${renderDetailRow(tableId, rowId, 10, {
+            details: row.details || [],
+            columns: detailColumns,
+          })}
+        `;
+          })
           .join("")}
       </tbody>
     </table>
@@ -795,13 +1055,25 @@ function renderSearchTermTable(rows, tableId) {
   if (!rows.length) {
     return `<div class="muted">No unique terms found.</div>`;
   }
-  const topRows = sortRows(rows, tableId, {
+  const sortedRows = sortRows(rows, tableId, {
     term: (row) => row.term,
     spend: (row) => row.spend,
     sales: (row) => row.sales,
     acos: (row) => row.acos,
     cvr: (row) => row.cvr,
-  }).slice(0, 50);
+  });
+  const sortLabelMap = {
+    term: "term",
+    spend: "spend",
+    sales: "sales",
+    acos: "ACoS",
+    cvr: "CVR",
+  };
+  const currentSortKey = sortState[tableId]?.key || "spend";
+  const sortLabel = sortLabelMap[currentSortKey] || "spend";
+  const limit = state.ui.searchTermLimits[tableId] || 10;
+  const visibleRows = sortedRows.slice(0, limit);
+  const hasMore = sortedRows.length > visibleRows.length;
   return `
     <table data-table-id="${tableId}">
       <thead>
@@ -814,7 +1086,7 @@ function renderSearchTermTable(rows, tableId) {
         </tr>
       </thead>
       <tbody>
-        ${topRows
+        ${visibleRows
           .map(
             (row) => `
           <tr>
@@ -829,7 +1101,16 @@ function renderSearchTermTable(rows, tableId) {
           .join("")}
       </tbody>
     </table>
-    <div class="muted">Showing top ${topRows.length} terms by spend.</div>
+    <div class="table-footer">
+      <span class="muted">Showing ${visibleRows.length} of ${
+    sortedRows.length
+  } terms by ${sortLabel}.</span>
+      ${
+        hasMore
+          ? `<button class="table-more" data-table-id="${tableId}">Show more</button>`
+          : ""
+      }
+    </div>
   `;
 }
 
@@ -837,23 +1118,32 @@ function renderPausedTable(paused, tableId) {
   if (!paused) {
     return `<div class="muted">No paused data available.</div>`;
   }
+  const detailsByType = paused.details || {};
   const rows = [
     {
       label: "Campaigns",
       count: paused.campaigns?.count ?? 0,
       summary: paused.campaigns?.summary ?? {},
+      details: detailsByType.campaigns || [],
     },
     {
       label: "Ad Groups",
       count: paused.adGroups?.count ?? 0,
       summary: paused.adGroups?.summary ?? {},
+      details: detailsByType.adGroups || [],
     },
     {
       label: "Targets",
       count: paused.targets?.count ?? 0,
       summary: paused.targets?.summary ?? {},
+      details: detailsByType.targets || [],
     },
   ];
+  const labelMap = {
+    Campaigns: "Campaign",
+    "Ad Groups": "Ad group",
+    Targets: "Target",
+  };
   const sortedRows = sortRows(rows, tableId, {
     label: (row) => row.label,
     count: (row) => row.count,
@@ -867,6 +1157,7 @@ function renderPausedTable(paused, tableId) {
     <table data-table-id="${tableId}">
       <thead>
         <tr>
+          <th class="col-toggle"></th>
           ${renderHeader("Paused type", "label", tableId)}
           ${renderHeader("Count", "count", tableId)}
           ${renderHeader("Spend", "spend", tableId)}
@@ -878,9 +1169,55 @@ function renderPausedTable(paused, tableId) {
       </thead>
       <tbody>
         ${sortedRows
-          .map(
-            (row) => `
+          .map((row, index) => {
+            const rowId = buildRowId(`${row.label}-${index}`);
+            const detailColumns = [
+              {
+                label: labelMap[row.label] || "Entity",
+                key: "label",
+                accessor: (item) => item.label,
+                render: (item) => escapeHtml(item.label),
+              },
+              {
+                label: "Spend %",
+                key: "spendSharePct",
+                accessor: (item) => item.spendSharePct,
+                render: (item) => formatPercent(item.spendSharePct),
+              },
+              {
+                label: "Sales %",
+                key: "salesSharePct",
+                accessor: (item) => item.salesSharePct,
+                render: (item) => formatPercent(item.salesSharePct),
+              },
+              {
+                label: "Spend",
+                key: "spend",
+                accessor: (item) => item.spend,
+                render: (item) => formatCurrency(item.spend),
+              },
+              {
+                label: "Sales",
+                key: "sales",
+                accessor: (item) => item.sales,
+                render: (item) => formatCurrency(item.sales),
+              },
+              {
+                label: "ACoS",
+                key: "acos",
+                accessor: (item) => item.acos,
+                render: (item) => formatPercent(item.acos),
+              },
+              {
+                label: "RoAS",
+                key: "roas",
+                accessor: (item) => item.roas,
+                render: (item) => formatNumber(item.roas),
+              },
+            ];
+            return `
           <tr>
+            <td class="col-toggle">${renderRowToggle(tableId, rowId)}</td>
             <td>${row.label}</td>
             <td>${row.count}</td>
             <td>${formatCurrency(row.summary.spend ?? 0)}</td>
@@ -889,8 +1226,12 @@ function renderPausedTable(paused, tableId) {
             <td>${formatNumber(row.summary.roas)}</td>
             <td>${formatCurrency(row.summary.cpc ?? 0)}</td>
           </tr>
-        `
-          )
+          ${renderDetailRow(tableId, rowId, 8, {
+            details: row.details || [],
+            columns: detailColumns,
+          })}
+        `;
+          })
           .join("")}
       </tbody>
     </table>
@@ -901,6 +1242,50 @@ function renderPlacementTable(rows, tableId) {
   if (!rows.length) {
     return `<div class="muted">No placement data available.</div>`;
   }
+  const detailColumns = [
+    {
+      label: "Campaign",
+      key: "label",
+      accessor: (item) => item.label,
+      render: (item) => escapeHtml(item.label),
+    },
+    {
+      label: "Spend %",
+      key: "spendSharePct",
+      accessor: (item) => item.spendSharePct,
+      render: (item) => formatPercent(item.spendSharePct),
+    },
+    {
+      label: "Sales %",
+      key: "salesSharePct",
+      accessor: (item) => item.salesSharePct,
+      render: (item) => formatPercent(item.salesSharePct),
+    },
+    {
+      label: "Spend",
+      key: "spend",
+      accessor: (item) => item.spend,
+      render: (item) => formatCurrency(item.spend),
+    },
+    {
+      label: "Sales",
+      key: "sales",
+      accessor: (item) => item.sales,
+      render: (item) => formatCurrency(item.sales),
+    },
+    {
+      label: "ACoS",
+      key: "acos",
+      accessor: (item) => item.acos,
+      render: (item) => formatPercent(item.acos),
+    },
+    {
+      label: "RoAS",
+      key: "roas",
+      accessor: (item) => item.roas,
+      render: (item) => formatNumber(item.roas),
+    },
+  ];
   const sortedRows = sortRows(rows, tableId, {
     label: (row) => row.label,
     spendPct: (row) => row.spendPct,
@@ -915,6 +1300,7 @@ function renderPlacementTable(rows, tableId) {
     <table data-table-id="${tableId}">
       <thead>
         <tr>
+          <th class="col-toggle"></th>
           ${renderHeader("Placement", "label", tableId)}
           ${renderHeader("Spend %", "spendPct", tableId)}
           ${renderHeader("Sales %", "salesPct", tableId)}
@@ -927,9 +1313,11 @@ function renderPlacementTable(rows, tableId) {
       </thead>
       <tbody>
         ${sortedRows
-          .map(
-            (row) => `
+          .map((row, index) => {
+            const rowId = buildRowId(`${row.label}-${index}`);
+            return `
           <tr>
+            <td class="col-toggle">${renderRowToggle(tableId, rowId)}</td>
             <td>${row.label}</td>
             <td>${formatPercent(row.spendPct)}</td>
             <td>${formatPercent(row.salesPct)}</td>
@@ -939,8 +1327,12 @@ function renderPlacementTable(rows, tableId) {
             <td>${formatNumber(row.roas)}</td>
             <td>${formatCurrency(row.avgCpc)}</td>
           </tr>
-        `
-          )
+          ${renderDetailRow(tableId, rowId, 9, {
+            details: row.details || [],
+            columns: detailColumns,
+          })}
+        `;
+          })
           .join("")}
       </tbody>
     </table>
@@ -951,6 +1343,50 @@ function renderBiddingStrategyTable(rows, tableId) {
   if (!rows.length) {
     return `<div class="muted">No bidding strategy data available.</div>`;
   }
+  const detailColumns = [
+    {
+      label: "Campaign",
+      key: "label",
+      accessor: (item) => item.label,
+      render: (item) => escapeHtml(item.label),
+    },
+    {
+      label: "Spend %",
+      key: "spendSharePct",
+      accessor: (item) => item.spendSharePct,
+      render: (item) => formatPercent(item.spendSharePct),
+    },
+    {
+      label: "Sales %",
+      key: "salesSharePct",
+      accessor: (item) => item.salesSharePct,
+      render: (item) => formatPercent(item.salesSharePct),
+    },
+    {
+      label: "Spend",
+      key: "spend",
+      accessor: (item) => item.spend,
+      render: (item) => formatCurrency(item.spend),
+    },
+    {
+      label: "Sales",
+      key: "sales",
+      accessor: (item) => item.sales,
+      render: (item) => formatCurrency(item.sales),
+    },
+    {
+      label: "ACoS",
+      key: "acos",
+      accessor: (item) => item.acos,
+      render: (item) => formatPercent(item.acos),
+    },
+    {
+      label: "RoAS",
+      key: "roas",
+      accessor: (item) => item.roas,
+      render: (item) => formatNumber(item.roas),
+    },
+  ];
   const sortedRows = sortRows(rows, tableId, {
     label: (row) => row.label,
     spendPct: (row) => row.spendPct,
@@ -965,6 +1401,7 @@ function renderBiddingStrategyTable(rows, tableId) {
     <table data-table-id="${tableId}">
       <thead>
         <tr>
+          <th class="col-toggle"></th>
           ${renderHeader("Bidding strategy", "label", tableId)}
           ${renderHeader("Spend %", "spendPct", tableId)}
           ${renderHeader("Sales %", "salesPct", tableId)}
@@ -977,9 +1414,11 @@ function renderBiddingStrategyTable(rows, tableId) {
       </thead>
       <tbody>
         ${sortedRows
-          .map(
-            (row) => `
+          .map((row, index) => {
+            const rowId = buildRowId(`${row.label}-${index}`);
+            return `
           <tr>
+            <td class="col-toggle">${renderRowToggle(tableId, rowId)}</td>
             <td>${row.label}</td>
             <td>${formatPercent(row.spendPct)}</td>
             <td>${formatPercent(row.salesPct)}</td>
@@ -989,8 +1428,12 @@ function renderBiddingStrategyTable(rows, tableId) {
             <td>${formatNumber(row.roas)}</td>
             <td>${formatCurrency(row.avgCpc)}</td>
           </tr>
-        `
-          )
+          ${renderDetailRow(tableId, rowId, 9, {
+            details: row.details || [],
+            columns: detailColumns,
+          })}
+        `;
+          })
           .join("")}
       </tbody>
     </table>
@@ -1518,6 +1961,106 @@ function sortRows(rows, tableId, accessors) {
     }
     return String(aVal ?? "").localeCompare(String(bVal ?? "")) * direction;
   });
+}
+
+function buildRowId(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "");
+}
+
+function isRowExpanded(tableId, rowId) {
+  return !!state.ui.expandedRows[`${tableId}:${rowId}`];
+}
+
+function renderRowToggle(tableId, rowId) {
+  const expanded = isRowExpanded(tableId, rowId);
+  return `
+    <button class="row-toggle" data-table-id="${tableId}" data-row-id="${rowId}" aria-expanded="${expanded}">
+      ${expanded ? "▾" : "▸"}
+    </button>
+  `;
+}
+
+function getDetailLimit(tableId, rowId) {
+  return state.ui.detailLimits[`${tableId}:${rowId}`] || 10;
+}
+
+function renderDetailTable(tableId, rowId, details, columns) {
+  if (!details || !details.length) {
+    return `<div class="muted">No details available.</div>`;
+  }
+  const detailTableId = `${tableId}::detail::${rowId}`;
+  const accessors = columns.reduce((acc, col) => {
+    if (col.key && typeof col.accessor === "function") {
+      acc[col.key] = col.accessor;
+    }
+    return acc;
+  }, {});
+  const sorted = sortRows(details, detailTableId, accessors);
+  const limit = getDetailLimit(tableId, rowId);
+  const visible = sorted.slice(0, limit);
+  const moreAvailable = details.length > visible.length;
+  return `
+    <div class="detail-table-wrap">
+      <table class="detail-table" data-table-id="${detailTableId}">
+        <thead>
+          <tr>
+            ${columns
+              .map((col) =>
+                col.key
+                  ? renderHeader(col.label, col.key, detailTableId)
+                  : `<th>${col.label}</th>`
+              )
+              .join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${visible
+            .map(
+              (item) => `
+            <tr>
+              ${columns
+                .map((col) => `<td>${col.render(item)}</td>`)
+                .join("")}
+            </tr>
+          `
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <div class="detail-footer">
+        <span class="muted">Showing ${visible.length} of ${
+    details.length
+  }</span>
+        ${
+          moreAvailable
+            ? `<button class="detail-more" data-table-id="${tableId}" data-row-id="${rowId}">Show more</button>`
+            : ""
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderDetailRow(tableId, rowId, colspan, detailConfig) {
+  const expanded = isRowExpanded(tableId, rowId);
+  const content = detailConfig
+    ? renderDetailTable(
+        tableId,
+        rowId,
+        detailConfig.details,
+        detailConfig.columns
+      )
+    : "";
+  return `
+    <tr class="row-detail ${expanded ? "is-open" : ""}">
+      <td colspan="${colspan}">
+        ${content}
+      </td>
+    </tr>
+  `;
 }
 
 function renderKpi(label, value) {
