@@ -4,94 +4,224 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Amazon Ads Audit Tool</title>
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Parkinsans:wght@300;400;500;600;700&display=swap"
+    />
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   </head>
   <body>
-    <header class="app-header">
-      <div>
-        <h1>Amazon Ads Audit Tool</h1>
-        <p class="muted">
-          Upload a bulk sheet, review mappings, then explore buckets and search
-          term insights without the clutter.
-        </p>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="app-title">
+            <strong>Maz</strong>
+          </div>
+          <div class="session-select">
+            <label class="muted" for="session-select">Session</label>
+            <select id="session-select"></select>
+          </div>
+        </div>
+        <div class="topbar-center" id="topbar-metrics"></div>
+        <div class="topbar-right">
+          <button id="upload-open" class="btn primary">Upload +</button>
+          <button id="docs-open" class="btn ghost">Docs</button>
+          <button id="settings-open" class="btn ghost">Settings</button>
+        </div>
+      </header>
+
+      <div class="app-body">
+        <aside class="sidebar">
+          <nav class="nav-list">
+            <button class="nav-item active" data-section="overview">Overview</button>
+            <button class="nav-item" data-section="campaigns">Campaigns</button>
+            <button class="nav-item" data-section="ad-groups">Ad Groups</button>
+            <button class="nav-item" data-section="match-types">Match Types</button>
+            <div class="nav-sublist">
+              <button class="nav-item nav-sub" data-section="match-keywords">
+                Keywords
+              </button>
+              <button class="nav-item nav-sub" data-section="match-asins">
+                ASINs
+              </button>
+              <button class="nav-item nav-sub" data-section="match-asins-expanded">
+                ASINs Expanded
+              </button>
+              <button class="nav-item nav-sub" data-section="match-auto">Auto</button>
+              <button class="nav-item nav-sub" data-section="match-categories">
+                Categories
+              </button>
+              <button class="nav-item nav-sub" data-section="match-related">
+                Related KWs
+              </button>
+            </div>
+            <button class="nav-item" data-section="negative-keywords">
+              Negative Keywords
+            </button>
+            <button class="nav-item" data-section="search-terms">Search Terms</button>
+            <button class="nav-item" data-section="bidding-strategies">
+              Campaign Bidding Strategies
+            </button>
+            <button class="nav-item" data-section="placements">Placements</button>
+          </nav>
+        </aside>
+
+        <main class="workspace">
+          <section id="home-view" class="home-view"></section>
+
+          <section id="session-view" class="session-view">
+            <div class="workspace-header">
+              <div>
+                <div class="breadcrumb muted" id="workspace-breadcrumb"></div>
+                <h2 id="workspace-title">Overview</h2>
+              </div>
+              <div class="workspace-controls">
+                <input
+                  id="search-input"
+                  type="search"
+                  placeholder="Search within section"
+                />
+                <select id="sort-select">
+                  <option value="spend-desc">Spend (high to low)</option>
+                  <option value="spend-asc">Spend (low to high)</option>
+                  <option value="sales-desc">Sales (high to low)</option>
+                  <option value="sales-asc">Sales (low to high)</option>
+                  <option value="acos-desc">ACoS (high to low)</option>
+                  <option value="acos-asc">ACoS (low to high)</option>
+                  <option value="roas-desc">ROAS (high to low)</option>
+                  <option value="roas-asc">ROAS (low to high)</option>
+                </select>
+                <div class="filter-group" id="grouped-by-wrap">
+                  <label class="muted" for="grouped-by">Grouped by</label>
+                  <select id="grouped-by">
+                    <option value="acos">ACoS</option>
+                    <option value="roas">RoAS</option>
+                  </select>
+                </div>
+                <div class="view-toggle">
+                  <button class="view-btn active" data-view="groups">Grouped</button>
+                  <button class="view-btn" data-view="table">All</button>
+                </div>
+                <div class="filter-group">
+                  <label class="muted" for="adtype-filter">Ad type</label>
+                  <select id="adtype-filter">
+                    <option value="All">All</option>
+                    <option value="SP">SP</option>
+                    <option value="SB">SB</option>
+                    <option value="SD">SD</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div id="workspace-content" class="workspace-content"></div>
+          </section>
+        </main>
+
+        <aside class="inspector" id="inspector">
+          <div class="inspector-header">
+            <div>
+              <div id="inspector-title" class="inspector-title">Inspector</div>
+              <div id="inspector-type" class="chip muted"></div>
+            </div>
+            <div class="inspector-actions">
+              <button id="inspector-pin" class="btn ghost icon" aria-label="Pin">📌</button>
+              <button id="inspector-close" class="btn ghost icon" aria-label="Close">✕</button>
+            </div>
+          </div>
+          <div id="inspector-body" class="inspector-body"></div>
+        </aside>
       </div>
-    </header>
+    </div>
 
-    <main class="app-shell">
-      <section class="card">
-        <h2>1) Upload bulk sheet</h2>
-        <div class="row">
+    <div id="upload-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>New Upload</h3>
+          <button id="upload-close" class="btn ghost icon" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <label class="muted" for="upload-name">Session name</label>
+          <input id="upload-name" type="text" placeholder="January audit" />
+          <label class="muted">Session date range</label>
+          <div class="row">
+            <input id="upload-date-start" type="date" />
+            <span class="muted">to</span>
+            <input id="upload-date-end" type="date" />
+          </div>
+          <label class="muted" for="upload-notes">Notes (optional)</label>
+          <textarea id="upload-notes" rows="3" placeholder="Notes"></textarea>
+          <label class="muted" for="file-input">Bulk sheet</label>
           <input id="file-input" type="file" accept=".xlsx,.xls" />
-          <button id="reset-btn" class="ghost">Reset</button>
+          <div id="file-meta" class="muted"></div>
+          <div id="file-warning" class="muted"></div>
         </div>
-        <div class="row">
-          <label class="muted" for="brand-input">Brand aliases (comma-separated)</label>
-          <input id="brand-input" type="text" placeholder="e.g. Chaos Club, Chaos" />
+        <div class="modal-footer">
+          <button id="upload-create" class="btn primary">Create session</button>
         </div>
-        <div id="file-meta" class="muted"></div>
-        <div id="file-warning" class="muted"></div>
-      </section>
+      </div>
+    </div>
 
-      <section class="card">
-        <div class="row space-between">
-          <h2>2) Column mapping</h2>
-          <div class="row">
-            <button id="auto-map-btn" class="ghost">Auto-map</button>
-            <button id="save-map-btn" class="ghost">Download mapping</button>
-            <label class="ghost file-btn">
-              Upload mapping
-              <input id="map-upload" type="file" accept=".json" />
-            </label>
-          </div>
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-card large">
+        <div class="modal-header">
+          <h3>Session Settings</h3>
+          <button id="settings-close" class="btn ghost">Close</button>
         </div>
-        <p class="muted">
-          Mapping lets you fix column changes without editing code. Adjust per
-          sheet if Amazon renames headers.
-        </p>
-        <div id="mapping-panel" class="mapping-panel"></div>
-      </section>
+        <div class="modal-body">
+          <section class="card compact">
+            <div class="row space-between">
+              <h4>AI summaries</h4>
+              <div class="row no-print">
+                <button id="ai-generate-btn" class="btn ghost" disabled>
+                  Generate summaries
+                </button>
+                <button id="ai-print-btn" class="btn ghost" disabled>
+                  Print report
+                </button>
+              </div>
+            </div>
+            <div class="row ai-config no-print">
+              <label class="muted" for="ai-key-input">OpenAI API key</label>
+              <input id="ai-key-input" type="password" placeholder="sk-..." />
+              <label class="muted" for="ai-model-input">Model</label>
+              <input id="ai-model-input" type="text" value="gpt-5-mini" />
+            </div>
+            <div id="ai-status" class="muted"></div>
+            <div id="ai-report" class="report muted">
+              Generate summaries to see the report.
+            </div>
+          </section>
 
-      <section class="card report-card">
-        <div class="row space-between">
-          <h2>3) AI summaries</h2>
-          <div class="row no-print">
-            <button id="ai-generate-btn" class="ghost" disabled>
-              Generate summaries
-            </button>
-            <button id="ai-print-btn" class="ghost" disabled>
-              Print report
-            </button>
-          </div>
+          <section class="card compact">
+            <div class="row space-between">
+              <h4>Upload settings</h4>
+              <div class="row">
+                <button id="auto-map-btn" class="btn ghost">Auto-map</button>
+                <button id="save-map-btn" class="btn ghost">Download mapping</button>
+                <label class="btn ghost file-btn">
+                  Upload mapping
+                  <input id="map-upload" type="file" accept=".json" />
+                </label>
+              </div>
+            </div>
+            <div class="row">
+              <label class="muted" for="brand-input">Brand aliases</label>
+              <input
+                id="brand-input"
+                type="text"
+                placeholder="e.g. Chaos Club, Chaos"
+              />
+            </div>
+            <p class="muted">
+              Mapping lets you fix column changes without editing code.
+            </p>
+            <div id="mapping-panel" class="mapping-panel"></div>
+          </section>
         </div>
-        <div class="row ai-config no-print">
-          <label class="muted" for="ai-key-input">OpenAI API key</label>
-          <input id="ai-key-input" type="password" placeholder="sk-..." />
-          <label class="muted" for="ai-model-input">Model</label>
-          <input id="ai-model-input" type="text" value="gpt-5-mini" />
-        </div>
-        <div id="ai-status" class="muted"></div>
-        <div id="ai-report" class="report muted">
-          Generate summaries to see the report.
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="row space-between">
-          <h2>4) Audit dashboard</h2>
-          <div class="row">
-            <button id="export-btn" class="ghost" disabled>Export JSON</button>
-          </div>
-        </div>
-        <div id="summary-strip" class="summary-strip muted">
-          Upload a bulk sheet to see share metrics.
-        </div>
-        <div id="health-panel" class="health-panel"></div>
-        <div id="dashboard" class="dashboard muted">
-          Upload a bulk sheet to see results.
-        </div>
-      </section>
-    </main>
+      </div>
+    </div>
 
     <script>
       if (window.location.protocol === "file:") {

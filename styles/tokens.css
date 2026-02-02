@@ -1,0 +1,52 @@
+:root {
+  /* Canvas */
+  --bg: #fbfbfc;
+
+  /* Surfaces */
+  --surface: #ffffff;
+  --surface-2: #f6f7f9;
+  --surface-3: #f1f3f6;
+
+  /* Lines */
+  --border: rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.16);
+
+  /* Text */
+  --text: rgba(15, 23, 42, 0.92);
+  --text-muted: rgba(15, 23, 42, 0.62);
+  --text-faint: rgba(15, 23, 42, 0.45);
+
+  /* Accent (swap later) */
+  --accent: #d97706;
+  --accent-soft: rgba(217, 119, 6, 0.16);
+
+  /* Status */
+  --good: #16a34a;
+  --warn: #d97706;
+  --bad: #dc2626;
+  --info: #2563eb;
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.08);
+
+  /* Radius */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* Focus */
+  --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.25);
+
+  /* Table */
+  --row-hover: rgba(15, 23, 42, 0.04);
+  --row-selected: rgba(217, 119, 6, 0.10);
+}
