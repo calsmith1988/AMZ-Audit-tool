@@ -17,7 +17,10 @@
       <header class="topbar">
         <div class="topbar-left">
           <div class="app-title">
-            <strong>Maz</strong>
+            <strong class="app-logo">
+              <span class="logo-main">M</span><span class="logo-sub">A</span
+              ><span class="logo-sub">Z</span>
+            </strong>
           </div>
           <div class="session-select">
             <label class="muted" for="session-select">Session</label>
@@ -35,36 +38,136 @@
       <div class="app-body">
         <aside class="sidebar">
           <nav class="nav-list">
-            <button class="nav-item active" data-section="overview">Overview</button>
-            <button class="nav-item" data-section="campaigns">Campaigns</button>
-            <button class="nav-item" data-section="ad-groups">Ad Groups</button>
-            <button class="nav-item" data-section="match-types">Match Types</button>
+            <button class="nav-item active" data-section="overview">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M3 11.5L12 4l9 7.5" />
+                  <path d="M6 10.5V20h12v-9.5" />
+                </svg>
+              </span>
+              <span class="nav-label">Overview</span>
+            </button>
+            <button class="nav-item" data-section="campaigns">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 10l9-4v12l-9-4z" />
+                  <path d="M15 9.5c1.7 1.1 1.7 4.9 0 6" />
+                  <path d="M18 8c2.7 2 2.7 7 0 9" />
+                </svg>
+              </span>
+              <span class="nav-label">Campaigns</span>
+            </button>
+            <button class="nav-item" data-section="ad-groups">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="3.5" y="4" width="7" height="7" rx="1.5" />
+                  <rect x="13.5" y="4" width="7" height="7" rx="1.5" />
+                  <rect x="3.5" y="13" width="7" height="7" rx="1.5" />
+                  <rect x="13.5" y="13" width="7" height="7" rx="1.5" />
+                </svg>
+              </span>
+              <span class="nav-label">Ad Groups</span>
+            </button>
+            <button class="nav-item" data-section="match-types">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="8" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </span>
+              <span class="nav-label">Match Types</span>
+            </button>
             <div class="nav-sublist">
               <button class="nav-item nav-sub" data-section="match-keywords">
-                Keywords
+                <span class="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <span class="nav-label">Keywords</span>
               </button>
               <button class="nav-item nav-sub" data-section="match-asins">
-                ASINs
+                <span class="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <span class="nav-label">ASINs</span>
               </button>
               <button class="nav-item nav-sub" data-section="match-asins-expanded">
-                ASINs Expanded
+                <span class="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <span class="nav-label">ASINs Expanded</span>
               </button>
-              <button class="nav-item nav-sub" data-section="match-auto">Auto</button>
+              <button class="nav-item nav-sub" data-section="match-auto">
+                <span class="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <span class="nav-label">Auto</span>
+              </button>
               <button class="nav-item nav-sub" data-section="match-categories">
-                Categories
+                <span class="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <span class="nav-label">Categories</span>
               </button>
               <button class="nav-item nav-sub" data-section="match-related">
-                Related KWs
+                <span class="nav-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </span>
+                <span class="nav-label">Related KWs</span>
               </button>
             </div>
             <button class="nav-item" data-section="negative-keywords">
-              Negative Keywords
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="8" />
+                  <path d="M7 17L17 7" />
+                </svg>
+              </span>
+              <span class="nav-label">Negative Keywords</span>
             </button>
-            <button class="nav-item" data-section="search-terms">Search Terms</button>
+            <button class="nav-item" data-section="search-terms">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="6" />
+                  <path d="M16 16l4 4" />
+                </svg>
+              </span>
+              <span class="nav-label">Search Terms</span>
+            </button>
             <button class="nav-item" data-section="bidding-strategies">
-              Campaign Bidding Strategies
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 6h14" />
+                  <path d="M5 12h14" />
+                  <path d="M5 18h14" />
+                  <circle cx="9" cy="6" r="2" />
+                  <circle cx="15" cy="12" r="2" />
+                  <circle cx="11" cy="18" r="2" />
+                </svg>
+              </span>
+              <span class="nav-label">Campaign Bidding Strategies</span>
             </button>
-            <button class="nav-item" data-section="placements">Placements</button>
+            <button class="nav-item" data-section="placements">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="8" />
+                  <path d="M12 7v10" />
+                  <path d="M7 12h10" />
+                </svg>
+              </span>
+              <span class="nav-label">Placements</span>
+            </button>
           </nav>
         </aside>
 
@@ -113,6 +216,20 @@
                     <option value="SD">SD</option>
                   </select>
                 </div>
+                <div class="filter-group" id="searchterm-filter-wrap">
+                  <label class="muted" for="searchterm-filter">Filter</label>
+                  <select id="searchterm-filter">
+                    <option value="terms">Search Terms</option>
+                    <option value="asins">ASINs</option>
+                  </select>
+                </div>
+                <div class="filter-group" id="negative-filter-wrap">
+                  <label class="muted" for="negative-filter">Filter</label>
+                  <select id="negative-filter">
+                    <option value="keywords">Keywords</option>
+                    <option value="asins">ASINs</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div id="workspace-content" class="workspace-content"></div>
@@ -126,8 +243,16 @@
               <div id="inspector-type" class="chip muted"></div>
             </div>
             <div class="inspector-actions">
-              <button id="inspector-pin" class="btn ghost icon" aria-label="Pin">📌</button>
-              <button id="inspector-close" class="btn ghost icon" aria-label="Close">✕</button>
+              <button id="inspector-close" class="btn ghost icon" aria-label="Close">
+                <span class="icon-close">✕</span>
+                <span class="icon-open">
+                  <svg viewBox="0 0 24 24" class="icon-inline">
+                    <circle cx="12" cy="12" r="8" />
+                    <path d="M12 8v4" />
+                    <circle cx="12" cy="16" r="1" />
+                  </svg>
+                </span>
+              </button>
             </div>
           </div>
           <div id="inspector-body" class="inspector-body"></div>

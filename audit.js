@@ -231,6 +231,7 @@ export function buildAuditResults(datasets, options = {}) {
         : null;
     const sbVideoPresence =
       adType === "SB" ? detectSbVideoPresence(campaignRows) : null;
+    const details = buildInspectorDetails(campaignRows, adType);
 
     results.adTypes[adType] = {
       summary,
@@ -245,6 +246,7 @@ export function buildAuditResults(datasets, options = {}) {
       matchTypeMixFlag,
       sbVideoPresence,
       searchTermInsights,
+      details,
     };
   });
 
@@ -352,6 +354,274 @@ export function computeSummary(rows) {
     cpc: totals.clicks ? totals.spend / totals.clicks : null,
     cvr: totals.clicks ? totals.orders / totals.clicks : null,
     roas: totals.spend ? totals.sales / totals.spend : null,
+  };
+}
+
+function computeDetailMetrics(rows) {
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.impressions += row.impressions || 0;
+      acc.clicks += row.clicks || 0;
+      acc.spend += row.spend || 0;
+      acc.sales += row.sales || 0;
+      acc.orders += row.orders || 0;
+      acc.units += row.units || 0;
+      return acc;
+    },
+    { impressions: 0, clicks: 0, spend: 0, sales: 0, orders: 0, units: 0 }
+  );
+  return {
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    ctr: totals.impressions ? totals.clicks / totals.impressions : null,
+    spend: totals.spend,
+    sales: totals.sales,
+    orders: totals.orders,
+    units: totals.units,
+    cvr: totals.clicks ? totals.orders / totals.clicks : null,
+    acos: totals.sales ? totals.spend / totals.sales : null,
+    cpc: totals.clicks ? totals.spend / totals.clicks : null,
+    roas: totals.spend ? totals.sales / totals.spend : null,
+  };
+}
+
+function buildDetailRows(rows, keyFn, labelFn) {
+  const grouped = groupBy(rows, keyFn);
+  return Object.entries(grouped)
+    .map(([key, items]) => ({
+      label: labelFn ? labelFn(items[0], key, items) : key,
+      ...computeDetailMetrics(items),
+    }))
+    .sort((a, b) => (b.spend || 0) - (a.spend || 0));
+}
+
+function buildDetailIndexByParent(rows, parentKeyFn, detailKeyFn, detailLabelFn, title) {
+  const grouped = groupBy(rows, parentKeyFn);
+  return Object.entries(grouped).reduce((acc, [parentKey, items]) => {
+    acc[parentKey] = {
+      title,
+      rows: buildDetailRows(items, detailKeyFn, detailLabelFn),
+    };
+    return acc;
+  }, {});
+}
+
+function buildAdGroupGroupKey(row) {
+  return row.adGroupId || row.adGroupName || "Unmapped";
+}
+
+function isNegativeKeywordEntity(row) {
+  const entity = row.entityNormalized || normalizeValue(row.entity);
+  return (
+    entity === "campaign negative keyword" ||
+    entity === "negative keyword" ||
+    entity === "negative product targeting"
+  );
+}
+
+function buildNegativeKeywordKey(row) {
+  return (
+    row.keywordText ||
+    row.productTargetingExpression ||
+    row.asinTarget ||
+    "Negative"
+  );
+}
+
+function buildInspectorDetails(campaignRows, adType) {
+  const targetRows = campaignRows.filter((row) =>
+    isTargetEntity(adType, row.entityNormalized || normalizeValue(row.entity))
+  );
+  const keywordRows = targetRows.filter((row) => row.keywordText);
+  const negativeRows = campaignRows.filter((row) => isNegativeKeywordEntity(row));
+
+  const campaigns = Object.entries(groupBy(targetRows, buildCampaignKey)).reduce(
+    (acc, [campaignKey, items]) => {
+      const keywordItems = items.filter((row) => row.keywordText);
+      if (keywordItems.length) {
+        acc[campaignKey] = {
+          title: "Keywords",
+          rows: buildDetailRows(
+            keywordItems,
+            (row) => row.keywordText || "Unmapped",
+            (row, key) => row.keywordText || key
+          ),
+        };
+        return acc;
+      }
+      acc[campaignKey] = {
+        title: "Targets",
+        rows: buildDetailRows(
+          items,
+          (row) => buildTargetLabel(row) || "Unmapped",
+          (row, key) => buildTargetLabel(row) || key
+        ),
+      };
+      return acc;
+    },
+    {}
+  );
+
+  const adGroups = Object.entries(groupBy(targetRows, buildAdGroupGroupKey)).reduce(
+    (acc, [adGroupKey, items]) => {
+      const keywordItems = items.filter((row) => row.keywordText);
+      if (keywordItems.length) {
+        acc[adGroupKey] = {
+          title: "Keywords",
+          rows: buildDetailRows(
+            keywordItems,
+            (row) => row.keywordText || "Unmapped",
+            (row, key) => row.keywordText || key
+          ),
+        };
+        return acc;
+      }
+      acc[adGroupKey] = {
+        title: "Targets",
+        rows: buildDetailRows(
+          items,
+          (row) => buildTargetLabel(row) || "Unmapped",
+          (row, key) => buildTargetLabel(row) || key
+        ),
+      };
+      return acc;
+    },
+    {}
+  );
+
+  const matchTypes = Object.entries(
+    groupBy(
+      targetRows.filter((row) => row.matchType),
+      (row) => row.matchType || "Unmapped"
+    )
+  ).reduce((acc, [matchType, items]) => {
+    const keywordItems = items.filter((row) => row.keywordText);
+    if (keywordItems.length) {
+      acc[matchType] = {
+        title: "Keywords",
+        rows: buildDetailRows(
+          keywordItems,
+          (row) => row.keywordText || "Unmapped",
+          (row, key) => row.keywordText || key
+        ),
+      };
+      return acc;
+    }
+    acc[matchType] = {
+      title: "Targets",
+      rows: buildDetailRows(
+        items,
+        (row) => buildTargetLabel(row) || "Unmapped",
+        (row, key) => buildTargetLabel(row) || key
+      ),
+    };
+    return acc;
+  }, {});
+
+  const biddingStrategies = buildDetailIndexByParent(
+    campaignRows.filter((row) => row.biddingStrategy),
+    (row) => row.biddingStrategy || "Unknown",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const placements = buildDetailIndexByParent(
+    campaignRows.filter((row) => row.placement),
+    (row) => row.placement || "Unknown",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const negativeKeywords = buildDetailIndexByParent(
+    negativeRows,
+    (row) => buildNegativeKeywordKey(row),
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const matchKeywords = buildDetailIndexByParent(
+    keywordRows,
+    (row) => row.keywordText || "Unmapped",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const matchAsins = buildDetailIndexByParent(
+    targetRows.filter(
+      (row) =>
+        row.entityNormalized === "product targeting" && row.matchType === "ASINs"
+    ),
+    (row) => row.asinTarget || "Unmapped",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const matchAsinsExpanded = buildDetailIndexByParent(
+    targetRows.filter(
+      (row) =>
+        row.entityNormalized === "product targeting" &&
+        row.matchType === "ASINs Expanded"
+    ),
+    (row) => row.asinTarget || row.productTargetingExpression || "Unmapped",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const matchAuto = buildDetailIndexByParent(
+    targetRows.filter(
+      (row) =>
+        row.entityNormalized === "product targeting" && row.matchType === "Auto"
+    ),
+    (row) => row.productTargetingExpression || row.matchType || "Auto",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const matchCategories = buildDetailIndexByParent(
+    targetRows.filter(
+      (row) =>
+        row.entityNormalized === "product targeting" &&
+        row.matchType === "Category"
+    ),
+    (row) => row.productTargetingExpression || "Category",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  const matchRelated = buildDetailIndexByParent(
+    targetRows.filter(
+      (row) =>
+        row.entityNormalized === "product targeting" &&
+        row.matchType === "Related Keywords"
+    ),
+    (row) =>
+      row.productTargetingExpression || row.keywordText || "Related",
+    (row) => buildCampaignKey(row),
+    (_row, key, items) => pickCampaignLabel(items, key),
+    "Campaigns"
+  );
+
+  return {
+    campaigns,
+    "ad-groups": adGroups,
+    "match-types": matchTypes,
+    "bidding-strategies": biddingStrategies,
+    placements,
+    "negative-keywords": negativeKeywords,
+    "match-keywords": matchKeywords,
+    "match-asins": matchAsins,
+    "match-asins-expanded": matchAsinsExpanded,
+    "match-auto": matchAuto,
+    "match-categories": matchCategories,
+    "match-related": matchRelated,
   };
 }
 

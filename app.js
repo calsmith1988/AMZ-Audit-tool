@@ -37,9 +37,15 @@ const state = {
     sortDirection: "desc",
     adTypeFilter: "All",
     selectedEntity: null,
+    selectedBucket: null,
     inspectorPinned: false,
     inspectorOpen: true,
     tableLimit: 20,
+    inspectorDetailLimit: 25,
+    detailSortKey: "spend",
+    detailSortDirection: "desc",
+    searchTermFilter: "terms",
+    negativeKeywordFilter: "keywords",
     groupedBy: "acos",
   },
 };
@@ -75,6 +81,10 @@ const viewToggle = document.querySelector(".view-toggle");
 const adTypeFilter = document.getElementById("adtype-filter");
 const groupedByWrap = document.getElementById("grouped-by-wrap");
 const groupedBySelect = document.getElementById("grouped-by");
+const searchTermFilter = document.getElementById("searchterm-filter");
+const searchTermFilterWrap = document.getElementById("searchterm-filter-wrap");
+const negativeFilter = document.getElementById("negative-filter");
+const negativeFilterWrap = document.getElementById("negative-filter-wrap");
 
 const inspector = document.getElementById("inspector");
 const inspectorTitle = document.getElementById("inspector-title");
@@ -132,7 +142,7 @@ function updateSessionSelect() {
   if (!state.sessions.length) {
     return;
   }
-  state.sessions.forEach((session) => {
+  state.sessions.slice(0, 4).forEach((session) => {
     const option = document.createElement("option");
     option.value = session.id;
     option.textContent = truncateLabel(session.name, 20);
@@ -261,6 +271,7 @@ navItems.forEach((item) => {
   item.addEventListener("click", () => {
     state.ui.activeSection = item.dataset.section;
     state.ui.selectedEntity = null;
+    state.ui.selectedBucket = null;
     if (!state.ui.inspectorPinned) {
       state.ui.inspectorOpen = state.ui.activeSection === "overview";
     }
@@ -277,6 +288,7 @@ viewButtons.forEach((button) => {
       return;
     }
     state.ui.viewMode = view;
+    state.ui.selectedBucket = null;
     renderApp();
   });
 });
@@ -311,6 +323,20 @@ if (groupedBySelect) {
   });
 }
 
+if (searchTermFilter) {
+  searchTermFilter.addEventListener("change", () => {
+    state.ui.searchTermFilter = searchTermFilter.value;
+    renderApp();
+  });
+}
+
+if (negativeFilter) {
+  negativeFilter.addEventListener("change", () => {
+    state.ui.negativeKeywordFilter = negativeFilter.value;
+    renderApp();
+  });
+}
+
 if (workspaceContent) {
   workspaceContent.addEventListener("click", (event) => {
     const moreBtn = event.target.closest("[data-table-more]");
@@ -323,6 +349,31 @@ if (workspaceContent) {
         state.ui.tableLimit = Infinity;
       }
       renderApp();
+    }
+    const detailBtn = event.target.closest("[data-detail-more]");
+    if (detailBtn) {
+      const action = detailBtn.dataset.detailMore;
+      if (action === "more") {
+        state.ui.inspectorDetailLimit += 20;
+      }
+      if (action === "all") {
+        state.ui.inspectorDetailLimit = Infinity;
+      }
+      renderWorkspaceContent();
+    }
+    const detailSort = event.target.closest("[data-detail-sort]");
+    if (detailSort) {
+      const key = detailSort.dataset.detailSort;
+      if (key) {
+        if (state.ui.detailSortKey === key) {
+          state.ui.detailSortDirection =
+            state.ui.detailSortDirection === "desc" ? "asc" : "desc";
+        } else {
+          state.ui.detailSortKey = key;
+          state.ui.detailSortDirection = "desc";
+        }
+        renderWorkspaceContent();
+      }
     }
   });
 }
@@ -340,12 +391,8 @@ if (inspectorPin) {
 
 if (inspectorClose) {
   inspectorClose.addEventListener("click", () => {
-    state.ui.inspectorOpen = false;
+    state.ui.inspectorOpen = !state.ui.inspectorOpen;
     state.ui.inspectorPinned = false;
-    if (inspectorPin) {
-      inspectorPin.classList.remove("active");
-      inspectorPin.setAttribute("aria-label", "Pin");
-    }
     renderInspector();
   });
 }
@@ -592,6 +639,16 @@ function syncNav() {
   navItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.section === state.ui.activeSection);
   });
+  if (appBody) {
+    appBody.classList.toggle(
+      "nav-collapsed",
+      state.ui.activeSection !== "overview"
+    );
+    appBody.classList.toggle(
+      "inspector-overlay",
+      state.ui.activeSection !== "overview"
+    );
+  }
 }
 
 function renderApp() {
@@ -712,7 +769,15 @@ function updateWorkspaceHeader() {
   }
   if (workspaceBreadcrumb) {
     const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
-    workspaceBreadcrumb.textContent = `Uploads / ${session?.name || "Session"}`;
+    workspaceBreadcrumb.innerHTML = `
+      <button class="breadcrumb-link" data-breadcrumb="uploads">Uploads</button>
+      <span class="breadcrumb-sep">/</span>
+      <span>${escapeHtml(session?.name || "Session")}</span>
+    `;
+    const link = workspaceBreadcrumb.querySelector("[data-breadcrumb='uploads']");
+    if (link) {
+      link.addEventListener("click", () => setActiveSession(""));
+    }
   }
   viewButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.view === state.ui.viewMode);
@@ -744,6 +809,20 @@ function updateWorkspaceHeader() {
   }
   if (groupedBySelect) {
     groupedBySelect.value = state.ui.groupedBy;
+  }
+  if (searchTermFilterWrap) {
+    searchTermFilterWrap.style.display =
+      sectionConfig.key === "search-terms" ? "flex" : "none";
+  }
+  if (searchTermFilter) {
+    searchTermFilter.value = state.ui.searchTermFilter;
+  }
+  if (negativeFilterWrap) {
+    negativeFilterWrap.style.display =
+      sectionConfig.key === "negative-keywords" ? "flex" : "none";
+  }
+  if (negativeFilter) {
+    negativeFilter.value = state.ui.negativeKeywordFilter;
   }
 }
 
@@ -777,6 +856,12 @@ function renderWorkspaceContent() {
     attachOverviewHandlers();
     return;
   }
+  if (sectionConfig.key === "negative-keywords") {
+    const tableRows = buildTableEntities(sectionConfig);
+    workspaceContent.innerHTML = renderNegativeCards(tableRows);
+    attachGroupHandlers();
+    return;
+  }
 
   const view = sectionConfig.allowViewToggle ? state.ui.viewMode : sectionConfig.defaultView;
   if (view !== state.ui.viewMode) {
@@ -786,6 +871,7 @@ function renderWorkspaceContent() {
     if (sectionConfig.groupedMode === "buckets") {
       const buckets = buildBucketEntities(sectionConfig);
       workspaceContent.innerHTML = renderBucketTable(buckets);
+      attachBucketHandlers();
     } else {
       const groups = buildGroupEntities(sectionConfig);
       workspaceContent.innerHTML = renderGroupCards(groups);
@@ -917,6 +1003,40 @@ function attachOverviewHandlers() {
   });
 }
 
+function stripAdTypePrefix(key) {
+  const splitIndex = String(key || "").indexOf("::");
+  if (splitIndex === -1) {
+    return key;
+  }
+  return key.slice(splitIndex + 2);
+}
+
+function getDetailEntry(sectionKey, adType, detailKey) {
+  if (!state.results || !adType || !detailKey) {
+    return null;
+  }
+  const detailSet = state.results.adTypes?.[adType]?.details?.[sectionKey];
+  if (!detailSet) {
+    return null;
+  }
+  return detailSet[detailKey] || null;
+}
+
+function getDetailKeyForRow(sectionKey, row) {
+  if (!row) {
+    return null;
+  }
+  if (sectionKey === "negative-keywords") {
+    return (
+      row.keywordText ||
+      row.productTargetingExpression ||
+      row.asinTarget ||
+      "Negative"
+    );
+  }
+  return null;
+}
+
 function buildGroupEntities(sectionConfig) {
   const rows = filterRowsBySection(sectionConfig);
   const filtered = applyAdTypeFilter(rows);
@@ -934,11 +1054,18 @@ function buildGroupEntities(sectionConfig) {
   const totalSales = state.accountTotals?.sales || 0;
   return Object.entries(grouped).map(([key, items]) => {
     const summary = computeSummary(items);
-    const baseLabel = sectionConfig.groupLabel(items[0], key, items);
-    const label =
-      state.ui.adTypeFilter === "All" && items[0]?.adType
-        ? `${items[0].adType} • ${baseLabel}`
-        : baseLabel;
+    const labelKey =
+      state.ui.adTypeFilter === "All" ? stripAdTypePrefix(key) : key;
+    const label = sectionConfig.groupLabel(items[0], labelKey, items);
+    const detailKey =
+      state.ui.adTypeFilter === "All" ? stripAdTypePrefix(key) : key;
+    const detailAdType =
+      state.ui.adTypeFilter === "All" ? items[0]?.adType : state.ui.adTypeFilter;
+    const details = getDetailEntry(
+      sectionConfig.key,
+      detailAdType,
+      detailKey
+    );
     return {
       id: `${sectionConfig.key}:${key}`,
       label,
@@ -946,6 +1073,7 @@ function buildGroupEntities(sectionConfig) {
       adType: items[0]?.adType || "",
       count: items.length,
       summary,
+      details,
       spendSharePct: totalSpend ? summary.spend / totalSpend : null,
       salesSharePct: totalSales ? summary.sales / totalSales : null,
     };
@@ -963,6 +1091,7 @@ function buildBucketEntities(sectionConfig) {
     key,
     label: sectionConfig.groupLabel(items[0], key, items),
     summary: computeSummary(items),
+    rows: items,
   }));
   const totalSpend = entities.reduce((sum, item) => sum + item.summary.spend, 0);
   const totalSales = entities.reduce((sum, item) => sum + item.summary.sales, 0);
@@ -980,12 +1109,14 @@ function buildBucketEntities(sectionConfig) {
       clicks: 0,
       orders: 0,
       count: 0,
+      entities: [],
     };
     totalsByBucket[bucket].spend += entity.summary.spend;
     totalsByBucket[bucket].sales += entity.summary.sales;
     totalsByBucket[bucket].clicks += entity.summary.clicks || 0;
     totalsByBucket[bucket].orders += entity.summary.orders || 0;
     totalsByBucket[bucket].count += 1;
+    totalsByBucket[bucket].entities.push(entity);
   });
 
   return Object.values(totalsByBucket)
@@ -999,6 +1130,18 @@ function buildBucketEntities(sectionConfig) {
       acos: bucket.sales ? bucket.spend / bucket.sales : null,
       roas: bucket.spend ? bucket.sales / bucket.spend : null,
       cvr: bucket.clicks ? bucket.orders / bucket.clicks : null,
+      cpc: bucket.clicks ? bucket.spend / bucket.clicks : null,
+      clicks: bucket.clicks,
+      orders: bucket.orders,
+      details: {
+        title: `Items in ${bucket.bucket}`,
+        rows: bucket.entities
+          .map((entity) => ({
+            label: entity.label,
+            ...computeDetailMetricsFromRows(entity.rows),
+          }))
+          .sort((a, b) => (b.spend || 0) - (a.spend || 0)),
+      },
     }))
     .sort((a, b) => {
       if (state.ui.sortKey === "group") {
@@ -1042,6 +1185,11 @@ function buildTableEntities(sectionConfig) {
       salesSharePct: state.accountTotals?.sales
         ? row.sales / state.accountTotals.sales
         : null,
+      details: getDetailEntry(
+        sectionConfig.key,
+        row.adType,
+        getDetailKeyForRow(sectionConfig.key, row)
+      ),
       raw: row,
     }));
   }
@@ -1095,10 +1243,14 @@ function renderTable(rows) {
     ? state.ui.tableLimit
     : sorted.length;
   const visible = sorted.slice(0, limit);
-  const body = sorted
-    .slice(0, limit)
+  const columnCount = 8;
+  const body = visible
     .map((item) => {
       const selected = state.ui.selectedEntity?.id === item.id;
+      const detailRow =
+        selected && item.details
+          ? renderDetailExpandedRow(item.details, columnCount)
+          : "";
       return `
         <tr class="${selected ? "selected" : ""}" data-entity="${item.id}">
           <td>${escapeHtml(item.label)}</td>
@@ -1110,6 +1262,7 @@ function renderTable(rows) {
           <td class="num">${formatPercent(item.summary.cvr)}</td>
           <td class="num">${formatNumber(item.summary.orders)}</td>
         </tr>
+        ${detailRow}
       `;
     })
     .join("");
@@ -1146,6 +1299,92 @@ function renderTable(rows) {
   `;
 }
 
+function renderDetailExpandedRow(detailEntry, colSpan) {
+  if (!detailEntry?.rows?.length) {
+    return "";
+  }
+  const rows = detailEntry.rows;
+  const sortedRows = [...rows].sort((a, b) => {
+    const key = state.ui.detailSortKey;
+    const direction = state.ui.detailSortDirection === "desc" ? -1 : 1;
+    if (key === "label") {
+      return direction * String(a.label || "").localeCompare(String(b.label || ""));
+    }
+    const aVal = Number(a[key] || 0);
+    const bVal = Number(b[key] || 0);
+    if (aVal === bVal) {
+      return 0;
+    }
+    return aVal > bVal ? direction : -direction;
+  });
+  const limit = Number.isFinite(state.ui.inspectorDetailLimit)
+    ? state.ui.inspectorDetailLimit
+    : sortedRows.length;
+  const visible = sortedRows.slice(0, limit);
+  const hasMore = visible.length < sortedRows.length;
+  const body = visible
+    .map(
+      (row) => `
+        <tr>
+          <td class="sticky">${escapeHtml(row.label)}</td>
+          <td class="num">${formatNumber(row.impressions)}</td>
+          <td class="num">${formatNumber(row.clicks)}</td>
+          <td class="num">${formatPercent(row.ctr)}</td>
+          <td class="num">${formatCurrency(row.spend)}</td>
+          <td class="num">${formatCurrency(row.sales)}</td>
+          <td class="num">${formatNumber(row.orders)}</td>
+          <td class="num">${formatNumber(row.units)}</td>
+          <td class="num">${formatPercent(row.cvr)}</td>
+          <td class="num">${formatPercent(row.acos)}</td>
+          <td class="num">${formatCurrency(row.cpc)}</td>
+          <td class="num">${formatRoas(row.roas)}</td>
+        </tr>
+      `
+    )
+    .join("");
+  return `
+    <tr class="detail-row">
+      <td colspan="${colSpan}">
+        <div class="detail-expanded">
+          <div class="detail-title">${escapeHtml(detailEntry.title || "Breakdown")}</div>
+          <div class="detail-table-wrap">
+            <table class="detail-table">
+              <thead>
+                <tr>
+                  <th data-detail-sort="label">Name</th>
+                  <th class="num" data-detail-sort="impressions">Impr</th>
+                  <th class="num" data-detail-sort="clicks">Clicks</th>
+                  <th class="num" data-detail-sort="ctr">CTR</th>
+                  <th class="num" data-detail-sort="spend">Spend</th>
+                  <th class="num" data-detail-sort="sales">Sales</th>
+                  <th class="num" data-detail-sort="orders">Orders</th>
+                  <th class="num" data-detail-sort="units">Units</th>
+                  <th class="num" data-detail-sort="cvr">CVR</th>
+                  <th class="num" data-detail-sort="acos">ACoS</th>
+                  <th class="num" data-detail-sort="cpc">CPC</th>
+                  <th class="num" data-detail-sort="roas">ROAS</th>
+                </tr>
+              </thead>
+              <tbody>${body}</tbody>
+            </table>
+          </div>
+          <div class="table-footer detail-footer">
+            <span>Showing ${visible.length} of ${sortedRows.length} rows</span>
+            ${
+              hasMore
+                ? `<div class="row">
+                    <button class="btn ghost" data-detail-more="more">Show 20 more</button>
+                    <button class="btn ghost" data-detail-more="all">Show all</button>
+                  </div>`
+                : ""
+            }
+          </div>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function renderBucketTable(rows) {
   if (!rows.length) {
     return `<div class="card"><p class="muted">No grouped buckets found.</p></div>`;
@@ -1153,17 +1392,25 @@ function renderBucketTable(rows) {
   const body = rows
     .map(
       (row) => `
-        <tr>
+        <tr class="${state.ui.selectedBucket === row.bucket ? "selected" : ""}" data-bucket="${escapeHtml(row.bucket)}">
           <td>${escapeHtml(row.bucket)}</td>
           <td class="num">${formatNumber(row.count)}</td>
           <td class="num">${formatPercent(row.spendSharePct)}</td>
           <td class="num">${formatPercent(row.salesSharePct)}</td>
           <td class="num">${formatCurrency(row.spend)}</td>
           <td class="num">${formatCurrency(row.sales)}</td>
+          <td class="num">${formatNumber(row.clicks)}</td>
+          <td class="num">${formatNumber(row.orders)}</td>
+          <td class="num">${formatCurrency(row.cpc)}</td>
           <td class="num">${formatPercent(row.acos)}</td>
           <td class="num">${formatRoas(row.roas)}</td>
           <td class="num">${formatPercent(row.cvr)}</td>
         </tr>
+        ${
+          state.ui.selectedBucket === row.bucket && row.details
+            ? renderDetailExpandedRow(row.details, 12)
+            : ""
+        }
       `
     )
     .join("");
@@ -1178,6 +1425,9 @@ function renderBucketTable(rows) {
             <th class="num">Sales share %</th>
             <th class="num">Spend</th>
             <th class="num">Sales</th>
+            <th class="num">Clicks</th>
+            <th class="num">Orders</th>
+            <th class="num">CPC</th>
             <th class="num">ACoS</th>
             <th class="num">ROAS</th>
             <th class="num">CVR</th>
@@ -1189,6 +1439,55 @@ function renderBucketTable(rows) {
   `;
 }
 
+function renderNegativeCards(rows) {
+  if (!rows.length) {
+    return `<div class="card"><p class="muted">No negatives found.</p></div>`;
+  }
+  const search = state.ui.searchQuery.toLowerCase();
+  const filtered = rows.filter((item) =>
+    item.label.toLowerCase().includes(search)
+  );
+  const cards = filtered
+    .map((item) => {
+      const selected = state.ui.selectedEntity?.id === item.id;
+      const matchType = item.raw?.matchType || "";
+      return `
+        <div class="card clickable ${selected ? "selected" : ""}" data-entity="${item.id}">
+          <div class="row space-between">
+            <strong>${escapeHtml(item.label)}</strong>
+            <span class="chip">${escapeHtml(item.adType || "—")}</span>
+          </div>
+          <div class="row">
+            ${
+              matchType
+                ? `<span class="chip">${escapeHtml(matchType)}</span>`
+                : ""
+            }
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+  return `<div class="masonry">${cards}</div>`;
+}
+
+function attachBucketHandlers() {
+  workspaceContent.querySelectorAll("[data-bucket]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const bucket = row.dataset.bucket;
+      if (!bucket) {
+        return;
+      }
+      state.ui.selectedBucket =
+        state.ui.selectedBucket === bucket ? null : bucket;
+      state.ui.inspectorDetailLimit = 25;
+      state.ui.detailSortKey = "spend";
+      state.ui.detailSortDirection = "desc";
+      renderWorkspaceContent();
+    });
+  });
+}
+
 function attachGroupHandlers() {
   workspaceContent.querySelectorAll("[data-entity]").forEach((card) => {
     card.addEventListener("click", () => {
@@ -1197,8 +1496,11 @@ function attachGroupHandlers() {
       if (!entity) {
         return;
       }
-      state.ui.selectedEntity = entity;
-      state.ui.inspectorOpen = true;
+      const isSame = state.ui.selectedEntity?.id === id;
+      state.ui.selectedEntity = isSame ? null : entity;
+      state.ui.inspectorDetailLimit = 25;
+      state.ui.detailSortKey = "spend";
+      state.ui.detailSortDirection = "desc";
       renderInspector();
       renderWorkspaceContent();
     });
@@ -1213,8 +1515,11 @@ function attachTableHandlers() {
       if (!entity) {
         return;
       }
-      state.ui.selectedEntity = entity;
-      state.ui.inspectorOpen = true;
+      const isSame = state.ui.selectedEntity?.id === id;
+      state.ui.selectedEntity = isSame ? null : entity;
+      state.ui.inspectorDetailLimit = 25;
+      state.ui.detailSortKey = "spend";
+      state.ui.detailSortDirection = "desc";
       renderInspector();
       renderWorkspaceContent();
     });
@@ -1519,6 +1824,7 @@ function filterRowsBySection(sectionConfig) {
   const searchRows = state.datasets
     .filter((set) => set.def.kind === "searchTerm")
     .flatMap((set) => set.rows);
+  const isAsinLike = (value) => String(value || "").toUpperCase().includes("B0");
   switch (sectionConfig.key) {
     case "campaigns":
       return campaignRows.filter((row) => row.entityNormalized === "campaign");
@@ -1558,11 +1864,29 @@ function filterRowsBySection(sectionConfig) {
           row.matchType === "Related Keywords"
       );
     case "negative-keywords":
-      return campaignRows.filter((row) =>
-        String(row.entityNormalized).toLowerCase().includes("negative")
-      );
+      return campaignRows.filter((row) => {
+        if (!String(row.entityNormalized).toLowerCase().includes("negative")) {
+          return false;
+        }
+        const keywordText = row.keywordText || "";
+        const targetExpression = row.productTargetingExpression || row.asinTarget || "";
+        if (state.ui.negativeKeywordFilter === "asins") {
+          return isAsinLike(keywordText) || isAsinLike(targetExpression);
+        }
+        return !isAsinLike(keywordText) && !isAsinLike(targetExpression);
+      });
     case "search-terms":
-      return searchRows.filter((row) => row.customerSearchTerm);
+      return searchRows.filter((row) => {
+        const term = String(row.customerSearchTerm || "");
+        if (!term) {
+          return false;
+        }
+        const isAsin = term.toUpperCase().includes("B0");
+        if (state.ui.searchTermFilter === "asins") {
+          return isAsin;
+        }
+        return !isAsin;
+      });
     case "bidding-strategies":
       return campaignRows.filter((row) => row.biddingStrategy);
     case "placements":
@@ -1590,6 +1914,34 @@ function applySorting(items) {
     }
     return aVal > bVal ? direction : -direction;
   });
+}
+
+function computeDetailMetricsFromRows(rows) {
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.impressions += row.impressions || 0;
+      acc.clicks += row.clicks || 0;
+      acc.spend += row.spend || 0;
+      acc.sales += row.sales || 0;
+      acc.orders += row.orders || 0;
+      acc.units += row.units || 0;
+      return acc;
+    },
+    { impressions: 0, clicks: 0, spend: 0, sales: 0, orders: 0, units: 0 }
+  );
+  return {
+    impressions: totals.impressions,
+    clicks: totals.clicks,
+    ctr: totals.impressions ? totals.clicks / totals.impressions : null,
+    spend: totals.spend,
+    sales: totals.sales,
+    orders: totals.orders,
+    units: totals.units,
+    cvr: totals.clicks ? totals.orders / totals.clicks : null,
+    acos: totals.sales ? totals.spend / totals.sales : null,
+    cpc: totals.clicks ? totals.spend / totals.clicks : null,
+    roas: totals.spend ? totals.sales / totals.spend : null,
+  };
 }
 
 function computeSummary(rows) {
@@ -1624,20 +1976,20 @@ function bucketLabelForSummary(summary, metric) {
       return "";
     }
     if (summary.roas >= 10) {
-      return "10x+";
+      return "10x+ RoAS";
     }
     const lower = Math.floor(summary.roas);
     const upper = lower + 1;
-    return `${lower}-${upper}x`;
+    return `${lower}-${upper}x RoAS`;
   }
   if (summary.acos || summary.acos === 0) {
     const pct = summary.acos * 100;
     if (pct >= 100) {
-      return "100%+";
+      return "100%+ ACoS";
     }
     const lower = Math.floor(pct / 10) * 10;
     const upper = lower + 10;
-    return `${lower}-${upper}%`;
+    return `${lower}-${upper}% ACoS`;
   }
   return "";
 }
@@ -1647,13 +1999,13 @@ function bucketSortOrder(label, metric) {
     return -1;
   }
   if (metric === "roas") {
-    if (label === "10x+") {
+    if (label === "10x+ RoAS") {
       return 999;
     }
     const match = label.match(/^(\d+)-/);
     return match ? Number(match[1]) : 998;
   }
-  if (label === "100%+") {
+  if (label === "100%+ ACoS") {
     return 999;
   }
   const match = label.match(/^(\d+)-/);
