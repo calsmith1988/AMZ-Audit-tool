@@ -83,6 +83,7 @@ const groupedByWrap = document.getElementById("grouped-by-wrap");
 const groupedBySelect = document.getElementById("grouped-by");
 const searchTermFilter = document.getElementById("searchterm-filter");
 const searchTermFilterWrap = document.getElementById("searchterm-filter-wrap");
+const searchTermExport = document.getElementById("searchterm-export");
 const negativeFilter = document.getElementById("negative-filter");
 const negativeFilterWrap = document.getElementById("negative-filter-wrap");
 
@@ -226,7 +227,14 @@ function clearUploadForm() {
 }
 
 if (uploadOpen) {
-  uploadOpen.addEventListener("click", () => openModal(uploadModal));
+  uploadOpen.addEventListener("click", () => {
+    if (uploadDateEnd) {
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      uploadDateEnd.value = yesterday.toISOString().slice(0, 10);
+    }
+    openModal(uploadModal);
+  });
 }
 if (uploadClose) {
   uploadClose.addEventListener("click", () => closeModal(uploadModal));
@@ -330,6 +338,38 @@ if (searchTermFilter) {
   });
 }
 
+if (searchTermExport) {
+  searchTermExport.addEventListener("click", () => {
+    const sectionConfig = getSectionConfig(state.ui.activeSection);
+    if (sectionConfig.key !== "search-terms") {
+      return;
+    }
+    const rows = buildTableEntities(sectionConfig);
+    const search = state.ui.searchQuery.toLowerCase();
+    const filtered = rows.filter((item) =>
+      item.label.toLowerCase().includes(search)
+    );
+    const lines = filtered
+      .map((item) => item.label)
+      .filter(Boolean)
+      .map((label) =>
+        state.ui.searchTermFilter === "asins"
+          ? String(label).toUpperCase()
+          : label
+      );
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const label = state.ui.searchTermFilter === "asins" ? "asins" : "search-terms";
+    link.href = url;
+    link.download = `${label}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
 if (negativeFilter) {
   negativeFilter.addEventListener("change", () => {
     state.ui.negativeKeywordFilter = negativeFilter.value;
@@ -339,6 +379,15 @@ if (negativeFilter) {
 
 if (workspaceContent) {
   workspaceContent.addEventListener("click", (event) => {
+    const copyBtn = event.target.closest("[data-copy]");
+    if (copyBtn) {
+      event.stopPropagation();
+      const value = copyBtn.dataset.copy || "";
+      if (value) {
+        navigator.clipboard?.writeText(value);
+      }
+      return;
+    }
     const moreBtn = event.target.closest("[data-table-more]");
     if (moreBtn) {
       const action = moreBtn.dataset.tableMore;
@@ -644,10 +693,7 @@ function syncNav() {
       "nav-collapsed",
       state.ui.activeSection !== "overview"
     );
-    appBody.classList.toggle(
-      "inspector-overlay",
-      state.ui.activeSection !== "overview"
-    );
+    appBody.classList.add("inspector-overlay");
   }
 }
 
@@ -817,6 +863,10 @@ function updateWorkspaceHeader() {
   if (searchTermFilter) {
     searchTermFilter.value = state.ui.searchTermFilter;
   }
+  if (searchTermExport) {
+    searchTermExport.style.display =
+      sectionConfig.key === "search-terms" ? "inline-flex" : "none";
+  }
   if (negativeFilterWrap) {
     negativeFilterWrap.style.display =
       sectionConfig.key === "negative-keywords" ? "flex" : "none";
@@ -954,12 +1004,79 @@ function renderOverview() {
     })
     .join("");
 
-  const insights = renderAiInsightCards();
   return `
     <div class="kpi-grid">${cards}</div>
-    <div>
-      <h3 class="card-title">AI Insights</h3>
-      ${insights}
+    ${renderAiRecommendationsHub(true)}
+  `;
+}
+
+function renderAiRecommendationsHub(useGrid) {
+  const tilesClass = useGrid ? "ai-tiles ai-tiles-grid" : "ai-tiles";
+  return `
+    <div class="card ai-spotlight">
+      <div class="row space-between">
+        <strong>AI Recommendations Hub</strong>
+        <span class="chip">Priority Insights</span>
+      </div>
+      <p class="muted">
+        This panel will surface your highest-impact opportunities, tailored to the
+        current upload. Think of it as your daily mission brief.
+      </p>
+      <div class="${tilesClass}">
+        <div class="ai-tile">
+          <div class="ai-dot"></div>
+          <div>
+            <div class="ai-title">Spend Share Risk</div>
+            <div class="muted">Flag top spenders with weak CVR.</div>
+          </div>
+        </div>
+        <div class="ai-tile">
+          <div class="ai-dot"></div>
+          <div>
+            <div class="ai-title">Search Term Gold</div>
+            <div class="muted">Highlight winning queries to harvest.</div>
+          </div>
+        </div>
+        <div class="ai-tile">
+          <div class="ai-dot"></div>
+          <div>
+            <div class="ai-title">A+ Optimization</div>
+            <div class="muted">Pinpoint high ACoS pockets to fix.</div>
+          </div>
+        </div>
+      </div>
+      ${renderHealthWarnings()}
+    </div>
+  `;
+}
+
+function renderAiChatPanel() {
+  return `
+    <div class="card ai-chat">
+      <div class="ai-chat-header">
+        <div>
+          <div class="ai-chat-title">AI Workspace</div>
+          <div class="muted">Ask about performance, actions, and what to fix next.</div>
+        </div>
+      </div>
+      <div class="ai-chat-chips">
+        <button class="chip">Summarize top spend risks</button>
+        <button class="chip">Explain ACoS outliers</button>
+        <button class="chip">Which campaigns to pause?</button>
+        <button class="chip">Where is wasted spend?</button>
+        <button class="chip">Best keywords to scale</button>
+        <button class="chip">Branded vs non‑branded split</button>
+      </div>
+      <div class="ai-chat-thread">
+        <p class="muted">
+          Ask a question to explore your upload. Insights can reference campaigns,
+          ad groups, keywords, placements, and search terms.
+        </p>
+      </div>
+      <div class="ai-chat-input">
+        <textarea rows="3" placeholder="Ask the AI to analyze your account..."></textarea>
+        <button class="btn primary" disabled>Send</button>
+      </div>
     </div>
   `;
 }
@@ -1086,6 +1203,7 @@ function buildBucketEntities(sectionConfig) {
   if (!filtered.length) {
     return [];
   }
+  const showCampaignChip = sectionConfig.key.startsWith("match-");
   const grouped = groupBy(filtered, sectionConfig.groupKey);
   const entities = Object.entries(grouped).map(([key, items]) => ({
     key,
@@ -1138,6 +1256,9 @@ function buildBucketEntities(sectionConfig) {
         rows: bucket.entities
           .map((entity) => ({
             label: entity.label,
+            campaignLabel: showCampaignChip
+              ? getCampaignLabelFromRows(entity.rows)
+              : "",
             ...computeDetailMetricsFromRows(entity.rows),
           }))
           .sort((a, b) => (b.spend || 0) - (a.spend || 0)),
@@ -1243,7 +1364,8 @@ function renderTable(rows) {
     ? state.ui.tableLimit
     : sorted.length;
   const visible = sorted.slice(0, limit);
-  const columnCount = 8;
+  const isSearchTerms = state.ui.activeSection === "search-terms";
+  const columnCount = isSearchTerms ? 10 : 8;
   const body = visible
     .map((item) => {
       const selected = state.ui.selectedEntity?.id === item.id;
@@ -1251,12 +1373,32 @@ function renderTable(rows) {
         selected && item.details
           ? renderDetailExpandedRow(item.details, columnCount)
           : "";
+      const clickCells = isSearchTerms
+        ? `<td class="num">${formatNumber(item.summary.clicks)}</td>
+          <td class="num">${formatCurrency(item.summary.cpc)}</td>`
+        : "";
+      const label =
+        isSearchTerms && state.ui.searchTermFilter === "asins"
+          ? String(item.label).toUpperCase()
+          : item.label;
+      const copyValue = String(label || "");
       return `
         <tr class="${selected ? "selected" : ""}" data-entity="${item.id}">
-          <td>${escapeHtml(item.label)}</td>
+          <td>
+            <span class="name-cell">
+              ${escapeHtml(label)}
+              <button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="9" y="9" width="10" height="10" rx="2" />
+                  <rect x="5" y="5" width="10" height="10" rx="2" />
+                </svg>
+              </button>
+            </span>
+          </td>
           <td>${escapeHtml(item.adType || "—")}</td>
           <td class="num">${formatCurrency(item.summary.spend)}</td>
           <td class="num">${formatCurrency(item.summary.sales)}</td>
+          ${clickCells}
           <td class="num">${formatPercent(item.summary.acos)}</td>
           <td class="num">${formatRoas(item.summary.roas)}</td>
           <td class="num">${formatPercent(item.summary.cvr)}</td>
@@ -1267,6 +1409,10 @@ function renderTable(rows) {
     })
     .join("");
   const hasMore = visible.length < sorted.length;
+  const clickHeaders = isSearchTerms
+    ? `<th class="num">Clicks</th>
+       <th class="num">CPC</th>`
+    : "";
   return `
     <div class="table-wrap">
       <table>
@@ -1276,6 +1422,7 @@ function renderTable(rows) {
             <th>Ad type</th>
             <th class="num">Spend</th>
             <th class="num">Sales</th>
+            ${clickHeaders}
             <th class="num">ACoS</th>
             <th class="num">ROAS</th>
             <th class="num">CVR</th>
@@ -1326,7 +1473,24 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
     .map(
       (row) => `
         <tr>
-          <td class="sticky">${escapeHtml(row.label)}</td>
+          <td class="sticky">
+            <div class="name-stack">
+              <span class="name-cell">
+                ${escapeHtml(row.label)}
+                <button class="copy-btn" data-copy="${escapeHtml(String(row.label || ""))}" aria-label="Copy name">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <rect x="9" y="9" width="10" height="10" rx="2" />
+                    <rect x="5" y="5" width="10" height="10" rx="2" />
+                  </svg>
+                </button>
+              </span>
+              ${
+                row.campaignLabel
+                  ? `<span class="chip campaign-chip">${escapeHtml(row.campaignLabel)}</span>`
+                  : ""
+              }
+            </div>
+          </td>
           <td class="num">${formatNumber(row.impressions)}</td>
           <td class="num">${formatNumber(row.clicks)}</td>
           <td class="num">${formatPercent(row.ctr)}</td>
@@ -1549,51 +1713,7 @@ function renderInspector() {
   if (!entity) {
     inspectorTitle.textContent = "Inspector";
     inspectorType.textContent = "";
-    if (state.ui.activeSection === "overview") {
-      inspectorBody.innerHTML = `
-        <div class="card ai-spotlight">
-          <div class="row space-between">
-            <strong>AI Recommendations Hub</strong>
-            <span class="chip">Priority Insights</span>
-          </div>
-          <p class="muted">
-            This panel will surface your highest-impact opportunities, tailored to the
-            current upload. Think of it as your daily mission brief.
-          </p>
-          <div class="ai-tiles">
-            <div class="ai-tile">
-              <div class="ai-dot"></div>
-              <div>
-                <div class="ai-title">Spend Share Risk</div>
-                <div class="muted">Flag top spenders with weak CVR.</div>
-              </div>
-            </div>
-            <div class="ai-tile">
-              <div class="ai-dot"></div>
-              <div>
-                <div class="ai-title">Search Term Gold</div>
-                <div class="muted">Highlight winning queries to harvest.</div>
-              </div>
-            </div>
-            <div class="ai-tile">
-              <div class="ai-dot"></div>
-              <div>
-                <div class="ai-title">A+ Optimization</div>
-                <div class="muted">Pinpoint high ACoS pockets to fix.</div>
-              </div>
-            </div>
-          </div>
-          ${renderHealthWarnings()}
-        </div>
-      `;
-      return;
-    }
-    inspectorBody.innerHTML = `
-      <div class="card">
-        <p class="muted">Select a card or row to see details.</p>
-        ${renderHealthWarnings()}
-      </div>
-    `;
+    inspectorBody.innerHTML = renderAiChatPanel();
     return;
   }
   inspectorTitle.textContent = entity.label;
@@ -1942,6 +2062,21 @@ function computeDetailMetricsFromRows(rows) {
     cpc: totals.clicks ? totals.spend / totals.clicks : null,
     roas: totals.spend ? totals.sales / totals.spend : null,
   };
+}
+
+function getCampaignLabelFromRows(rows) {
+  const labels = new Set(
+    rows
+      .map((row) => row.campaignName || row.campaignId || "")
+      .filter(Boolean)
+  );
+  if (!labels.size) {
+    return "Unknown campaign";
+  }
+  if (labels.size === 1) {
+    return [...labels][0];
+  }
+  return "Multiple campaigns";
 }
 
 function computeSummary(rows) {
