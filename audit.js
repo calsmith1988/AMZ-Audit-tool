@@ -5,11 +5,6 @@ export const SHEET_DEFS = [
     kind: "campaign",
   },
   {
-    name: "Sponsored Brands campaigns",
-    adType: "SB",
-    kind: "campaign",
-  },
-  {
     name: "SB Multi Ad Group Campaigns",
     adType: "SB",
     kind: "campaign",
@@ -160,13 +155,17 @@ export function buildAuditResults(datasets, options = {}) {
   const datasetsByType = groupBy(datasets, (item) => item.def.adType);
   const allCampaignRows = datasets
     .filter((set) => set.def.kind === "campaign")
-    .flatMap((set) => set.rows);
+    .flatMap((set) => set.rows)
+    .filter((row) => normalizeValue(row.entity) === "campaign");
   const accountTotals = computeSummary(allCampaignRows);
 
   Object.entries(datasetsByType).forEach(([adType, typedSets]) => {
     const campaignRows = typedSets
       .filter((set) => set.def.kind === "campaign")
       .flatMap((set) => set.rows);
+    const campaignEntityRows = campaignRows.filter(
+      (row) => normalizeValue(row.entity) === "campaign"
+    );
     const searchRows = typedSets
       .filter((set) => set.def.kind === "searchTerm")
       .flatMap((set) => set.rows);
@@ -177,19 +176,24 @@ export function buildAuditResults(datasets, options = {}) {
       accountTotals
     );
     const enabledRows = filterPausedRows(campaignRows, pausedBucket.index, adType);
-    const totals = computeSummary(campaignRows);
-    const enabledSummary = computeSummary(enabledRows);
+    const enabledCampaignRows = filterPausedRows(
+      campaignEntityRows,
+      pausedBucket.index,
+      adType
+    );
+    const totals = computeSummary(campaignEntityRows);
+    const totalSummary = computeSummary(campaignEntityRows);
     const summary = {
-      ...enabledSummary,
+      ...totalSummary,
       spendSharePct: accountTotals.spend
-        ? enabledSummary.spend / accountTotals.spend
+        ? totalSummary.spend / accountTotals.spend
         : null,
       salesSharePct: accountTotals.sales
-        ? enabledSummary.sales / accountTotals.sales
+        ? totalSummary.sales / accountTotals.sales
         : null,
     };
     const campaignBuckets = bucketByEntityWithDetails(
-      enabledRows,
+      enabledCampaignRows,
       (row) => row.campaignKey,
       (row) => row.campaignName || row.campaignId || row.campaignKey || "Unmapped",
       accountTotals
@@ -395,6 +399,21 @@ function buildDetailRows(rows, keyFn, labelFn) {
     .sort((a, b) => (b.spend || 0) - (a.spend || 0));
 }
 
+function getCampaignLabelFromRows(rows) {
+  const labels = new Set(
+    rows
+      .map((row) => row.campaignName || row.campaignId || "")
+      .filter(Boolean)
+  );
+  if (!labels.size) {
+    return "";
+  }
+  if (labels.size === 1) {
+    return [...labels][0];
+  }
+  return "Multiple campaigns";
+}
+
 function buildDetailIndexByParent(rows, parentKeyFn, detailKeyFn, detailLabelFn, title) {
   const grouped = groupBy(rows, parentKeyFn);
   return Object.entries(grouped).reduce((acc, [parentKey, items]) => {
@@ -497,23 +516,29 @@ function buildInspectorDetails(campaignRows, adType) {
   ).reduce((acc, [matchType, items]) => {
     const keywordItems = items.filter((row) => row.keywordText);
     if (keywordItems.length) {
+      const grouped = groupBy(keywordItems, (row) => row.keywordText || "Unmapped");
       acc[matchType] = {
         title: "Keywords",
-        rows: buildDetailRows(
-          keywordItems,
-          (row) => row.keywordText || "Unmapped",
-          (row, key) => row.keywordText || key
-        ),
+        rows: Object.entries(grouped)
+          .map(([key, groupItems]) => ({
+            label: key,
+            campaignLabel: getCampaignLabelFromRows(groupItems),
+            ...computeDetailMetrics(groupItems),
+          }))
+          .sort((a, b) => (b.spend || 0) - (a.spend || 0)),
       };
       return acc;
     }
+    const grouped = groupBy(items, (row) => buildTargetLabel(row) || "Unmapped");
     acc[matchType] = {
       title: "Targets",
-      rows: buildDetailRows(
-        items,
-        (row) => buildTargetLabel(row) || "Unmapped",
-        (row, key) => buildTargetLabel(row) || key
-      ),
+      rows: Object.entries(grouped)
+        .map(([key, groupItems]) => ({
+          label: key,
+          campaignLabel: getCampaignLabelFromRows(groupItems),
+          ...computeDetailMetrics(groupItems),
+        }))
+        .sort((a, b) => (b.spend || 0) - (a.spend || 0)),
     };
     return acc;
   }, {});

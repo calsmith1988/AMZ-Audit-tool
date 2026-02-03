@@ -905,6 +905,8 @@ tbody tr {
   font-size: 10px;
   padding: 2px 6px;
   border-radius: var(--r-sm);
+  background: #f9fafc;
+  color: var(--text-muted);
 }
 
 .copy-btn {
@@ -941,6 +943,12 @@ tbody tr {
 
 th[data-sort-key] {
   cursor: pointer;
+}
+
+.sort-indicator {
+  font-size: 10px;
+  color: var(--accent);
+  margin-left: 4px;
 }
 
 .table-footer {

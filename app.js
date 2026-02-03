@@ -46,6 +46,8 @@ const state = {
     detailSortDirection: "desc",
     searchTermFilter: "terms",
     negativeKeywordFilter: "keywords",
+    showCampaignChips: true,
+    noSalesFilter: "all",
     groupedBy: "acos",
   },
 };
@@ -86,6 +88,10 @@ const searchTermFilterWrap = document.getElementById("searchterm-filter-wrap");
 const searchTermExport = document.getElementById("searchterm-export");
 const negativeFilter = document.getElementById("negative-filter");
 const negativeFilterWrap = document.getElementById("negative-filter-wrap");
+const campaignChipToggle = document.getElementById("campaign-chip-toggle");
+const campaignChipWrap = document.getElementById("campaign-chip-wrap");
+const noSalesFilter = document.getElementById("no-sales-filter");
+const noSalesFilterWrap = document.getElementById("no-sales-filter-wrap");
 
 const inspector = document.getElementById("inspector");
 const inspectorTitle = document.getElementById("inspector-title");
@@ -377,8 +383,37 @@ if (negativeFilter) {
   });
 }
 
+if (campaignChipToggle) {
+  campaignChipToggle.addEventListener("change", () => {
+    state.ui.showCampaignChips = campaignChipToggle.value !== "off";
+    renderApp();
+  });
+}
+
+if (noSalesFilter) {
+  noSalesFilter.addEventListener("change", () => {
+    state.ui.noSalesFilter = noSalesFilter.value;
+    renderApp();
+  });
+}
+
 if (workspaceContent) {
   workspaceContent.addEventListener("click", (event) => {
+    const sortHeader = event.target.closest("th[data-sort-key]");
+    if (sortHeader) {
+      const key = sortHeader.dataset.sortKey;
+      if (key) {
+        if (state.ui.sortKey === key) {
+          state.ui.sortDirection =
+            state.ui.sortDirection === "desc" ? "asc" : "desc";
+        } else {
+          state.ui.sortKey = key;
+          state.ui.sortDirection = "desc";
+        }
+        renderWorkspaceContent();
+      }
+      return;
+    }
     const copyBtn = event.target.closest("[data-copy]");
     if (copyBtn) {
       event.stopPropagation();
@@ -679,6 +714,7 @@ function recompute() {
     datasets
       .filter((set) => set.def.kind === "campaign")
       .flatMap((set) => set.rows)
+      .filter((row) => String(row.entityNormalized) === "campaign")
   );
   resetAiSummaries("Data updated. Generate summaries to refresh AI insights.");
   renderApp();
@@ -874,6 +910,19 @@ function updateWorkspaceHeader() {
   if (negativeFilter) {
     negativeFilter.value = state.ui.negativeKeywordFilter;
   }
+  const showCampaignChipToggle = sectionConfig.key.startsWith("match-");
+  if (campaignChipWrap) {
+    campaignChipWrap.style.display = showCampaignChipToggle ? "flex" : "none";
+  }
+  if (campaignChipToggle) {
+    campaignChipToggle.value = state.ui.showCampaignChips ? "on" : "off";
+  }
+  if (noSalesFilterWrap) {
+    noSalesFilterWrap.style.display = sectionConfig.key === "overview" ? "none" : "flex";
+  }
+  if (noSalesFilter) {
+    noSalesFilter.value = state.ui.noSalesFilter;
+  }
 }
 
 function renderTopbarMetrics() {
@@ -935,46 +984,15 @@ function renderWorkspaceContent() {
 }
 
 function updateSortOptions(isGroupedView) {
-  if (!sortSelect) {
-    return;
-  }
   if (isGroupedView) {
-    const groupedLabel =
-      state.ui.groupedBy === "roas" ? "RoAS bands" : "ACoS bands";
-    const groupedLowHigh =
-      state.ui.groupedBy === "roas"
-        ? `${groupedLabel} (low → high)`
-        : `${groupedLabel} (low → high)`;
-    const groupedHighLow =
-      state.ui.groupedBy === "roas"
-        ? `${groupedLabel} (high → low)`
-        : `${groupedLabel} (high → low)`;
-    sortSelect.innerHTML = `
-      <option value="group-asc">${groupedLowHigh}</option>
-      <option value="group-desc">${groupedHighLow}</option>
-      <option value="spendShare-desc">Spend share (high to low)</option>
-      <option value="spendShare-asc">Spend share (low to high)</option>
-      <option value="salesShare-desc">Sales share (high to low)</option>
-      <option value="salesShare-asc">Sales share (low to high)</option>
-    `;
-    if (!["spendShare", "salesShare", "group"].includes(state.ui.sortKey)) {
+    if (!["spendSharePct", "salesSharePct", "group"].includes(state.ui.sortKey)) {
       state.ui.sortKey = "group";
       state.ui.sortDirection = "asc";
     }
     return;
   }
-  sortSelect.innerHTML = `
-    <option value="spend-desc">Spend (high to low)</option>
-    <option value="spend-asc">Spend (low to high)</option>
-    <option value="sales-desc">Sales (high to low)</option>
-    <option value="sales-asc">Sales (low to high)</option>
-    <option value="acos-desc">ACoS (high to low)</option>
-    <option value="acos-asc">ACoS (low to high)</option>
-    <option value="roas-desc">ROAS (high to low)</option>
-    <option value="roas-asc">ROAS (low to high)</option>
-  `;
   if (
-    !["spend", "sales", "acos", "roas"].includes(state.ui.sortKey) ||
+    !["label", "spend", "sales", "clicks", "orders", "cpc", "acos", "roas", "cvr", "spendSharePct", "salesSharePct"].includes(state.ui.sortKey) ||
     !["asc", "desc"].includes(state.ui.sortDirection)
   ) {
     state.ui.sortKey = "spend";
@@ -1157,10 +1175,16 @@ function getDetailKeyForRow(sectionKey, row) {
 function buildGroupEntities(sectionConfig) {
   const rows = filterRowsBySection(sectionConfig);
   const filtered = applyAdTypeFilter(rows);
-  if (!filtered.length) {
+  const noSalesFiltered =
+    state.ui.noSalesFilter === "no-sales"
+      ? filtered.filter(
+          (row) => (row.spend || 0) > 0 && (row.sales || 0) === 0
+        )
+      : filtered;
+  if (!noSalesFiltered.length) {
     return [];
   }
-  const grouped = groupBy(filtered, (row) => {
+  const grouped = groupBy(noSalesFiltered, (row) => {
     const baseKey = sectionConfig.groupKey(row);
     if (state.ui.adTypeFilter === "All") {
       return `${row.adType || "All"}::${baseKey}`;
@@ -1200,17 +1224,38 @@ function buildGroupEntities(sectionConfig) {
 function buildBucketEntities(sectionConfig) {
   const rows = filterRowsBySection(sectionConfig);
   const filtered = applyAdTypeFilter(rows);
-  if (!filtered.length) {
+  const noSalesFiltered =
+    state.ui.noSalesFilter === "no-sales"
+      ? filtered.filter(
+          (row) => (row.spend || 0) > 0 && (row.sales || 0) === 0
+        )
+      : filtered;
+  if (!noSalesFiltered.length) {
     return [];
   }
-  const showCampaignChip = sectionConfig.key.startsWith("match-");
-  const grouped = groupBy(filtered, sectionConfig.groupKey);
-  const entities = Object.entries(grouped).map(([key, items]) => ({
-    key,
-    label: sectionConfig.groupLabel(items[0], key, items),
-    summary: computeSummary(items),
-    rows: items,
-  }));
+  const showCampaignChip =
+    sectionConfig.key.startsWith("match-") && state.ui.showCampaignChips;
+  const useCampaignScopedGrouping =
+    sectionConfig.key.startsWith("match-") && sectionConfig.key !== "match-types";
+  const grouped = groupBy(noSalesFiltered, (row) => {
+    const baseKey = sectionConfig.groupKey(row);
+    if (!useCampaignScopedGrouping) {
+      return baseKey;
+    }
+    const campaignKey = getCampaignKeyForRow(row);
+    return `${campaignKey}::${baseKey}`;
+  });
+  const entities = Object.entries(grouped).map(([key, items]) => {
+    const displayKey = useCampaignScopedGrouping
+      ? sectionConfig.groupKey(items[0])
+      : key;
+    return {
+      key,
+      label: sectionConfig.groupLabel(items[0], displayKey, items),
+      summary: computeSummary(items),
+      rows: items,
+    };
+  });
   const totalSpend = entities.reduce((sum, item) => sum + item.summary.spend, 0);
   const totalSales = entities.reduce((sum, item) => sum + item.summary.sales, 0);
   const totalsByBucket = {};
@@ -1357,14 +1402,23 @@ function renderTable(rows) {
     return `<div class="card"><p class="muted">No entities found.</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
-  const sorted = applySorting(
-    rows.filter((item) => item.label.toLowerCase().includes(search))
+  const baseFiltered = rows.filter((item) =>
+    item.label.toLowerCase().includes(search)
   );
+  const noSalesFiltered =
+    state.ui.noSalesFilter === "no-sales"
+      ? baseFiltered.filter(
+          (item) => (item.summary?.spend || 0) > 0 && (item.summary?.sales || 0) === 0
+        )
+      : baseFiltered;
+  const sorted = applySorting(noSalesFiltered);
   const limit = Number.isFinite(state.ui.tableLimit)
     ? state.ui.tableLimit
     : sorted.length;
   const visible = sorted.slice(0, limit);
   const isSearchTerms = state.ui.activeSection === "search-terms";
+  const isMatchTypes = state.ui.activeSection === "match-types";
+  const showCopyIcon = state.ui.activeSection !== "match-types";
   const columnCount = isSearchTerms ? 10 : 8;
   const body = visible
     .map((item) => {
@@ -1377,28 +1431,36 @@ function renderTable(rows) {
         ? `<td class="num">${formatNumber(item.summary.clicks)}</td>
           <td class="num">${formatCurrency(item.summary.cpc)}</td>`
         : "";
+      const shareCells = isMatchTypes
+        ? `<td class="num">${formatPercent(item.spendSharePct)}</td>
+           <td class="num">${formatPercent(item.salesSharePct)}</td>`
+        : "";
       const label =
         isSearchTerms && state.ui.searchTermFilter === "asins"
           ? String(item.label).toUpperCase()
           : item.label;
       const copyValue = String(label || "");
+      const copyButton = showCopyIcon
+        ? `<button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="9" y="9" width="10" height="10" rx="2" />
+              <rect x="5" y="5" width="10" height="10" rx="2" />
+            </svg>
+          </button>`
+        : "";
       return `
         <tr class="${selected ? "selected" : ""}" data-entity="${item.id}">
           <td>
             <span class="name-cell">
               ${escapeHtml(label)}
-              <button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="9" y="9" width="10" height="10" rx="2" />
-                  <rect x="5" y="5" width="10" height="10" rx="2" />
-                </svg>
-              </button>
+              ${copyButton}
             </span>
           </td>
           <td>${escapeHtml(item.adType || "—")}</td>
           <td class="num">${formatCurrency(item.summary.spend)}</td>
           <td class="num">${formatCurrency(item.summary.sales)}</td>
           ${clickCells}
+          ${shareCells}
           <td class="num">${formatPercent(item.summary.acos)}</td>
           <td class="num">${formatRoas(item.summary.roas)}</td>
           <td class="num">${formatPercent(item.summary.cvr)}</td>
@@ -1409,24 +1471,35 @@ function renderTable(rows) {
     })
     .join("");
   const hasMore = visible.length < sorted.length;
+  const sortIndicator = (key) =>
+    state.ui.sortKey === key
+      ? `<span class="sort-indicator">${
+          state.ui.sortDirection === "desc" ? "↓" : "↑"
+        }</span>`
+      : "";
   const clickHeaders = isSearchTerms
-    ? `<th class="num">Clicks</th>
-       <th class="num">CPC</th>`
+    ? `<th class="num" data-sort-key="clicks">Clicks${sortIndicator("clicks")}</th>
+       <th class="num" data-sort-key="cpc">CPC${sortIndicator("cpc")}</th>`
+    : "";
+  const shareHeaders = isMatchTypes
+    ? `<th class="num" data-sort-key="spendSharePct">Spend share %${sortIndicator("spendSharePct")}</th>
+       <th class="num" data-sort-key="salesSharePct">Sales share %${sortIndicator("salesSharePct")}</th>`
     : "";
   return `
     <div class="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>Name</th>
+            <th data-sort-key="label">Name${sortIndicator("label")}</th>
             <th>Ad type</th>
-            <th class="num">Spend</th>
-            <th class="num">Sales</th>
+            <th class="num" data-sort-key="spend">Spend${sortIndicator("spend")}</th>
+            <th class="num" data-sort-key="sales">Sales${sortIndicator("sales")}</th>
             ${clickHeaders}
-            <th class="num">ACoS</th>
-            <th class="num">ROAS</th>
-            <th class="num">CVR</th>
-            <th class="num">Orders</th>
+            ${shareHeaders}
+            <th class="num" data-sort-key="acos">ACoS${sortIndicator("acos")}</th>
+            <th class="num" data-sort-key="roas">ROAS${sortIndicator("roas")}</th>
+            <th class="num" data-sort-key="cvr">CVR${sortIndicator("cvr")}</th>
+            <th class="num" data-sort-key="orders">Orders${sortIndicator("orders")}</th>
           </tr>
         </thead>
         <tbody>${body}</tbody>
@@ -1485,7 +1558,9 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
                 </button>
               </span>
               ${
-                row.campaignLabel
+                row.campaignLabel &&
+                state.ui.showCampaignChips &&
+                state.ui.activeSection.startsWith("match-")
                   ? `<span class="chip campaign-chip">${escapeHtml(row.campaignLabel)}</span>`
                   : ""
               }
@@ -1515,18 +1590,18 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
             <table class="detail-table">
               <thead>
                 <tr>
-                  <th data-detail-sort="label">Name</th>
-                  <th class="num" data-detail-sort="impressions">Impr</th>
-                  <th class="num" data-detail-sort="clicks">Clicks</th>
-                  <th class="num" data-detail-sort="ctr">CTR</th>
-                  <th class="num" data-detail-sort="spend">Spend</th>
-                  <th class="num" data-detail-sort="sales">Sales</th>
-                  <th class="num" data-detail-sort="orders">Orders</th>
-                  <th class="num" data-detail-sort="units">Units</th>
-                  <th class="num" data-detail-sort="cvr">CVR</th>
-                  <th class="num" data-detail-sort="acos">ACoS</th>
-                  <th class="num" data-detail-sort="cpc">CPC</th>
-                  <th class="num" data-detail-sort="roas">ROAS</th>
+                  <th data-detail-sort="label">Name${state.ui.detailSortKey === "label" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="impressions">Impr${state.ui.detailSortKey === "impressions" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="clicks">Clicks${state.ui.detailSortKey === "clicks" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="ctr">CTR${state.ui.detailSortKey === "ctr" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="spend">Spend${state.ui.detailSortKey === "spend" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="sales">Sales${state.ui.detailSortKey === "sales" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="orders">Orders${state.ui.detailSortKey === "orders" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="units">Units${state.ui.detailSortKey === "units" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="cvr">CVR${state.ui.detailSortKey === "cvr" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="acos">ACoS${state.ui.detailSortKey === "acos" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="cpc">CPC${state.ui.detailSortKey === "cpc" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="roas">ROAS${state.ui.detailSortKey === "roas" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                 </tr>
               </thead>
               <tbody>${body}</tbody>
@@ -1553,7 +1628,29 @@ function renderBucketTable(rows) {
   if (!rows.length) {
     return `<div class="card"><p class="muted">No grouped buckets found.</p></div>`;
   }
-  const body = rows
+  const sorted = [...rows].sort((a, b) => {
+    if (state.ui.sortKey === "group") {
+      return (
+        bucketSortOrder(a.bucket, state.ui.groupedBy) -
+        bucketSortOrder(b.bucket, state.ui.groupedBy)
+      );
+    }
+    const key = state.ui.sortKey;
+    const direction = state.ui.sortDirection === "desc" ? -1 : 1;
+    const aVal = a[key] ?? 0;
+    const bVal = b[key] ?? 0;
+    if (aVal === bVal) {
+      return 0;
+    }
+    return aVal > bVal ? direction : -direction;
+  });
+  const sortIndicator = (key) =>
+    state.ui.sortKey === key
+      ? `<span class="sort-indicator">${
+          state.ui.sortDirection === "desc" ? "↓" : "↑"
+        }</span>`
+      : "";
+  const body = sorted
     .map(
       (row) => `
         <tr class="${state.ui.selectedBucket === row.bucket ? "selected" : ""}" data-bucket="${escapeHtml(row.bucket)}">
@@ -1583,18 +1680,18 @@ function renderBucketTable(rows) {
       <table>
         <thead>
           <tr>
-            <th>Group</th>
-            <th class="num">Count</th>
-            <th class="num">Spend share %</th>
-            <th class="num">Sales share %</th>
-            <th class="num">Spend</th>
-            <th class="num">Sales</th>
-            <th class="num">Clicks</th>
-            <th class="num">Orders</th>
-            <th class="num">CPC</th>
-            <th class="num">ACoS</th>
-            <th class="num">ROAS</th>
-            <th class="num">CVR</th>
+            <th data-sort-key="group">Group${sortIndicator("group")}</th>
+            <th class="num" data-sort-key="count">Count${sortIndicator("count")}</th>
+            <th class="num" data-sort-key="spendSharePct">Spend share %${sortIndicator("spendSharePct")}</th>
+            <th class="num" data-sort-key="salesSharePct">Sales share %${sortIndicator("salesSharePct")}</th>
+            <th class="num" data-sort-key="spend">Spend${sortIndicator("spend")}</th>
+            <th class="num" data-sort-key="sales">Sales${sortIndicator("sales")}</th>
+            <th class="num" data-sort-key="clicks">Clicks${sortIndicator("clicks")}</th>
+            <th class="num" data-sort-key="orders">Orders${sortIndicator("orders")}</th>
+            <th class="num" data-sort-key="cpc">CPC${sortIndicator("cpc")}</th>
+            <th class="num" data-sort-key="acos">ACoS${sortIndicator("acos")}</th>
+            <th class="num" data-sort-key="roas">ROAS${sortIndicator("roas")}</th>
+            <th class="num" data-sort-key="cvr">CVR${sortIndicator("cvr")}</th>
           </tr>
         </thead>
         <tbody>${body}</tbody>
@@ -2027,6 +2124,9 @@ function applySorting(items) {
   const key = state.ui.sortKey;
   const direction = state.ui.sortDirection === "desc" ? -1 : 1;
   return [...items].sort((a, b) => {
+    if (key === "label") {
+      return direction * String(a.label || "").localeCompare(String(b.label || ""));
+    }
     const aVal = a.summary?.[key] ?? 0;
     const bVal = b.summary?.[key] ?? 0;
     if (aVal === bVal) {
@@ -2077,6 +2177,10 @@ function getCampaignLabelFromRows(rows) {
     return [...labels][0];
   }
   return "Multiple campaigns";
+}
+
+function getCampaignKeyForRow(row) {
+  return row.campaignId || row.campaignName || row.campaignKey || "";
 }
 
 function computeSummary(rows) {

@@ -186,21 +186,19 @@
                   type="search"
                   placeholder="Search within section"
                 />
-                <select id="sort-select">
-                  <option value="spend-desc">Spend (high to low)</option>
-                  <option value="spend-asc">Spend (low to high)</option>
-                  <option value="sales-desc">Sales (high to low)</option>
-                  <option value="sales-asc">Sales (low to high)</option>
-                  <option value="acos-desc">ACoS (high to low)</option>
-                  <option value="acos-asc">ACoS (low to high)</option>
-                  <option value="roas-desc">ROAS (high to low)</option>
-                  <option value="roas-asc">ROAS (low to high)</option>
-                </select>
+                <!-- Sorting now handled by clicking table headers -->
                 <div class="filter-group" id="grouped-by-wrap">
                   <label class="muted" for="grouped-by">Grouped by</label>
                   <select id="grouped-by">
                     <option value="acos">ACoS</option>
                     <option value="roas">RoAS</option>
+                  </select>
+                </div>
+                <div class="filter-group" id="campaign-chip-wrap">
+                  <label class="muted" for="campaign-chip-toggle">Campaign tags</label>
+                  <select id="campaign-chip-toggle">
+                    <option value="on">Show</option>
+                    <option value="off">Hide</option>
                   </select>
                 </div>
                 <div class="view-toggle">
@@ -214,6 +212,13 @@
                     <option value="SP">SP</option>
                     <option value="SB">SB</option>
                     <option value="SD">SD</option>
+                  </select>
+                </div>
+                <div class="filter-group" id="no-sales-filter-wrap">
+                  <label class="muted" for="no-sales-filter">Filter</label>
+                  <select id="no-sales-filter">
+                    <option value="all">All</option>
+                    <option value="no-sales">Spend, no sales</option>
                   </select>
                 </div>
                 <div class="filter-group" id="searchterm-filter-wrap">
