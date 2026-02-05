@@ -31,6 +31,8 @@ const state = {
     report: null,
     status: "",
     recommendations: [],
+    recommendationRules: null,
+    recommendationRulesStatus: "",
     chat: {
       messages: [],
       isBusy: false,
@@ -50,6 +52,7 @@ const state = {
     selectedBucket: null,
     inspectorPinned: false,
     inspectorOpen: true,
+    inspectorDismissed: false,
     tableLimit: 20,
     inspectorDetailLimit: 25,
     detailSortKey: "spend",
@@ -298,7 +301,11 @@ navItems.forEach((item) => {
     state.ui.selectedBucket = null;
     state.ui.searchQuery = "";
     if (!state.ui.inspectorPinned) {
-      state.ui.inspectorOpen = state.ui.activeSection === "overview";
+      if (state.ui.activeSection === "overview") {
+        state.ui.inspectorOpen = !state.ui.inspectorDismissed;
+      } else {
+        state.ui.inspectorOpen = false;
+      }
     }
     state.ui.viewMode = getSectionConfig(state.ui.activeSection).defaultView;
     syncNav();
@@ -488,6 +495,7 @@ if (inspectorClose) {
   inspectorClose.addEventListener("click", () => {
     state.ui.inspectorOpen = !state.ui.inspectorOpen;
     state.ui.inspectorPinned = false;
+    state.ui.inspectorDismissed = !state.ui.inspectorOpen;
     renderInspector();
   });
 }
@@ -1040,6 +1048,18 @@ function renderOverview() {
 }
 
 function buildAiRecommendations() {
+  const rules = Array.isArray(state.ai.recommendationRules)
+    ? state.ai.recommendationRules.filter((rule) => rule?.enabled)
+    : [];
+  if (rules.length) {
+    const fromRules = rules
+      .map((rule) => buildRecommendationFromRule(rule))
+      .filter(Boolean);
+    if (fromRules.length) {
+      return sortRecommendationsByPriority(fromRules);
+    }
+  }
+
   const fallback = [
     {
       title: "Spend Share Risk",
@@ -1075,6 +1095,279 @@ function buildAiRecommendations() {
   recommendations.push(acosOptimization || fallback[2]);
 
   return recommendations;
+}
+
+function buildRecommendationFromRule(rule) {
+  const title = String(rule.title || "").trim();
+  const descriptionTemplate = String(rule.description || "").trim();
+  const tag = String(rule.tag || "Insight").trim() || "Insight";
+  const priority = String(rule.priority || "Medium").trim() || "Medium";
+  const click = rule.click || null;
+  const section = rule.section || "";
+
+  if (!title) {
+    return null;
+  }
+
+  if (!state.results?.adTypes) {
+    return {
+      title,
+      description: descriptionTemplate || "No data available yet.",
+      tag,
+      priority,
+      disabled: true,
+    };
+  }
+
+  const candidate = evaluateRecommendationRule(rule);
+  if (!candidate) {
+    return {
+      title,
+      description: descriptionTemplate || "No matching data found.",
+      tag,
+      priority,
+      disabled: true,
+    };
+  }
+
+  const formattedValue = formatRecommendationMetric(
+    candidate.metric,
+    candidate.value
+  );
+  const description = applyRecommendationTemplate(descriptionTemplate, {
+    ...candidate,
+    value: formattedValue,
+  });
+
+  return {
+    title: applyRecommendationTemplate(title, candidate),
+    description: description || "Insight available.",
+    tag,
+    priority,
+    target: click ? buildRecommendationTarget(click, section, candidate) : null,
+  };
+}
+
+function evaluateRecommendationRule(rule) {
+  const ruleDef = rule.rule || {};
+  const source = String(ruleDef.source || "").trim();
+  if (!source) {
+    return null;
+  }
+  const adTypes = resolveRuleAdTypes(rule.adType);
+  if (!adTypes.length) {
+    return null;
+  }
+
+  if (source === "pausedBuckets") {
+    return evaluatePausedBucketRule(ruleDef, adTypes, rule.sort);
+  }
+
+  if (source === "searchTermInsights") {
+    return evaluateSearchTermRule(ruleDef, adTypes, rule.sort);
+  }
+
+  return evaluateBucketRule(ruleDef, adTypes, rule.sort);
+}
+
+function resolveRuleAdTypes(adType) {
+  if (!state.results?.adTypes) {
+    return [];
+  }
+  if (!adType || adType === "All") {
+    return Object.keys(state.results.adTypes || {});
+  }
+  return state.results.adTypes[adType] ? [adType] : [];
+}
+
+function evaluateBucketRule(ruleDef, adTypes, sort = {}) {
+  const source = String(ruleDef.source || "").trim();
+  const bucketFilter = ruleDef.bucket ? String(ruleDef.bucket) : "";
+  const metric = String(ruleDef.metric || sort?.by || "").trim() || "spend";
+  const min = Number.isFinite(ruleDef.min) ? ruleDef.min : null;
+  const direction = String(
+    ruleDef.direction || sort?.direction || ruleDef.sort || "desc"
+  ).toLowerCase();
+  const candidates = [];
+
+  adTypes.forEach((adType) => {
+    const buckets = state.results.adTypes?.[adType]?.[source] || [];
+    buckets.forEach((bucket) => {
+      if (bucketFilter && bucket.bucket !== bucketFilter && bucket.label !== bucketFilter) {
+        return;
+      }
+      const value = resolveBucketMetric(bucket, metric);
+      if (min !== null && value < min) {
+        return;
+      }
+      candidates.push({
+        adType,
+        bucket: bucket.bucket || bucket.label || "",
+        metric,
+        value,
+      });
+    });
+  });
+
+  if (!candidates.length) {
+    return null;
+  }
+  candidates.sort((a, b) =>
+    direction === "asc" ? a.value - b.value : b.value - a.value
+  );
+  return candidates[0];
+}
+
+function evaluatePausedBucketRule(ruleDef, adTypes, sort = {}) {
+  const bucketKey = String(ruleDef.bucket || "campaigns").trim();
+  const metric = String(ruleDef.metric || sort?.by || "summary.spend").trim();
+  const candidates = [];
+  adTypes.forEach((adType) => {
+    const paused = state.results.adTypes?.[adType]?.pausedBuckets;
+    const bucket = paused?.[bucketKey];
+    if (!bucket) {
+      return;
+    }
+    const value =
+      metric === "count"
+        ? bucket.count || 0
+        : bucket.summary?.spend || 0;
+    candidates.push({
+      adType,
+      bucket: bucketKey,
+      metric,
+      value,
+    });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  const direction = String(sort?.direction || "desc").toLowerCase();
+  candidates.sort((a, b) =>
+    direction === "asc" ? a.value - b.value : b.value - a.value
+  );
+  return candidates[0];
+}
+
+function evaluateSearchTermRule(ruleDef, adTypes, sort = {}) {
+  const listKey = String(ruleDef.bucket || "uniqueKeywords").trim();
+  const metric = String(ruleDef.metric || sort?.by || "sales").trim();
+  const candidates = [];
+  adTypes.forEach((adType) => {
+    const insights = state.results.adTypes?.[adType]?.searchTermInsights;
+    const list = insights?.[listKey] || [];
+    list.forEach((item) => {
+      const value = Number(item?.[metric] || 0);
+      candidates.push({
+        adType,
+        term: item.term,
+        metric,
+        value,
+        isAsin: Boolean(item.isAsin),
+      });
+    });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  const direction = String(sort?.direction || "desc").toLowerCase();
+  candidates.sort((a, b) =>
+    direction === "asc" ? a.value - b.value : b.value - a.value
+  );
+  return candidates[0];
+}
+
+function resolveBucketMetric(bucket, metric) {
+  if (!bucket || !metric) {
+    return 0;
+  }
+  if (metric === "acos") {
+    return bucket.acos ?? (bucket.sales ? bucket.spend / bucket.sales : 0);
+  }
+  if (metric === "roas") {
+    return bucket.roas ?? (bucket.spend ? bucket.sales / bucket.spend : 0);
+  }
+  return Number(bucket[metric] || 0);
+}
+
+function formatRecommendationMetric(metric, value) {
+  if (metric.includes("Pct") || metric === "acos" || metric === "cvr") {
+    return formatPercent(value);
+  }
+  if (metric === "roas") {
+    return formatRoas(value);
+  }
+  if (metric === "avgCpc" || metric === "cpc" || metric === "spend" || metric === "sales") {
+    return formatCurrency(value);
+  }
+  return formatNumber(value);
+}
+
+function applyRecommendationTemplate(template, data) {
+  if (!template) {
+    return "";
+  }
+  return template.replace(/\{(\w+)\}/g, (_match, key) => {
+    if (data[key] === undefined || data[key] === null) {
+      return "";
+    }
+    return String(data[key]);
+  });
+}
+
+function buildRecommendationTarget(click, sectionFallback, candidate) {
+  if (!click || typeof click !== "object") {
+    return null;
+  }
+  const target = { ...click };
+  if (!target.section && sectionFallback) {
+    target.section = sectionFallback;
+  }
+  if (!target.adTypeFilter && candidate?.adType) {
+    target.adTypeFilter = candidate.adType;
+  }
+  if (!target.selectedBucket && candidate?.bucket) {
+    target.selectedBucket = candidate.bucket;
+  }
+  if (!target.searchQuery && candidate?.term) {
+    target.searchQuery = candidate.term;
+  }
+  return target;
+}
+
+function sortRecommendationsByPriority(recommendations) {
+  const weights = { high: 3, medium: 2, low: 1 };
+  return [...recommendations].sort((a, b) => {
+    const aWeight = weights[String(a.priority || "").toLowerCase()] || 0;
+    const bWeight = weights[String(b.priority || "").toLowerCase()] || 0;
+    if (bWeight !== aWeight) {
+      return bWeight - aWeight;
+    }
+    return String(a.title || "").localeCompare(String(b.title || ""));
+  });
+}
+
+async function loadRecommendationRules() {
+  if (state.ai.recommendationRules !== null) {
+    return;
+  }
+  state.ai.recommendationRulesStatus = "loading";
+  try {
+    const response = await fetch("recommendations.json", { cache: "no-store" });
+    if (!response.ok) {
+      state.ai.recommendationRulesStatus = `error (${response.status})`;
+      console.warn("Failed to load recommendations.json", response.status);
+      return;
+    }
+    const data = await response.json();
+    const rules = Array.isArray(data?.recommendations) ? data.recommendations : [];
+    state.ai.recommendationRules = rules;
+    state.ai.recommendationRulesStatus = rules.length ? "loaded" : "empty";
+    renderApp();
+  } catch (error) {
+    state.ai.recommendationRulesStatus = "error";
+    console.warn("Failed to parse recommendations.json", error);
+  }
 }
 
 function buildSpendShareRiskRecommendation() {
@@ -1346,6 +1639,7 @@ function attachOverviewHandlers() {
         type: "Insight",
       };
       state.ui.inspectorOpen = true;
+      state.ui.inspectorDismissed = false;
       renderInspector();
     });
   });
@@ -3096,4 +3390,5 @@ function indexBucketSummaries(items) {
 
 updateAiControls();
 renderReport();
+loadRecommendationRules();
 renderApp();
