@@ -6,10 +6,12 @@ import {
   getEffectiveSheetDefs,
   normalizeRow,
 } from "./audit.js";
-import { requestAuditSummaries } from "./ai.js";
+import { requestAuditSummaries, requestChatResponse } from "./ai.js";
 
 const REQUIRED_FIELDS = ["spend", "sales", "clicks", "orders"];
 const AD_TYPE_OPTIONS = ["All", "SP", "SB", "SD"];
+const AI_CHAT_MAX_CONTEXT_CHARS = 60000;
+const AI_CHAT_MAX_HISTORY = 10;
 
 const state = {
   sessions: [],
@@ -28,6 +30,14 @@ const state = {
     bucketMap: {},
     report: null,
     status: "",
+    recommendations: [],
+    chat: {
+      messages: [],
+      isBusy: false,
+      draft: "",
+      contextTrimmed: false,
+      trimReason: "",
+    },
   },
   ui: {
     activeSection: "overview",
@@ -286,6 +296,7 @@ navItems.forEach((item) => {
     state.ui.activeSection = item.dataset.section;
     state.ui.selectedEntity = null;
     state.ui.selectedBucket = null;
+    state.ui.searchQuery = "";
     if (!state.ui.inspectorPinned) {
       state.ui.inspectorOpen = state.ui.activeSection === "overview";
     }
@@ -1028,12 +1039,203 @@ function renderOverview() {
   `;
 }
 
+function buildAiRecommendations() {
+  const fallback = [
+    {
+      title: "Spend Share Risk",
+      description: "Flag top spenders with weak CVR.",
+      tag: "Insight",
+      disabled: true,
+    },
+    {
+      title: "Search Term Gold",
+      description: "Highlight winning queries to harvest.",
+      tag: "Insight",
+      disabled: true,
+    },
+    {
+      title: "A+ Optimization",
+      description: "Pinpoint high ACoS pockets to fix.",
+      tag: "Strategy",
+      disabled: true,
+    },
+  ];
+
+  if (!state.results?.adTypes) {
+    return fallback;
+  }
+
+  const recommendations = [];
+  const spendRisk = buildSpendShareRiskRecommendation();
+  const searchTermGold = buildSearchTermGoldRecommendation();
+  const acosOptimization = buildAcosOptimizationRecommendation();
+
+  recommendations.push(spendRisk || fallback[0]);
+  recommendations.push(searchTermGold || fallback[1]);
+  recommendations.push(acosOptimization || fallback[2]);
+
+  return recommendations;
+}
+
+function buildSpendShareRiskRecommendation() {
+  const candidates = [];
+  Object.entries(state.results.adTypes || {}).forEach(([adType, data]) => {
+    const bucket = (data.campaignBuckets || []).find(
+      (item) => item.bucket === "No Sales"
+    );
+    if (!bucket || !bucket.spend) {
+      return;
+    }
+    candidates.push({
+      adType,
+      spend: bucket.spend,
+      bucketLabel: bucket.bucket,
+    });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  candidates.sort((a, b) => b.spend - a.spend);
+  const best = candidates[0];
+  return {
+    title: `Spend Share Risk (${best.adType})`,
+    description: `${formatCurrency(best.spend)} spend with no sales in ${best.adType} campaigns.`,
+    tag: "Insight",
+    target: {
+      section: "campaigns",
+      adTypeFilter: best.adType,
+      groupedBy: "acos",
+      viewMode: "groups",
+      selectedBucket: best.bucketLabel,
+      noSalesFilter: "all",
+    },
+  };
+}
+
+function buildSearchTermGoldRecommendation() {
+  const candidates = [];
+  Object.entries(state.results.adTypes || {}).forEach(([adType, data]) => {
+    const insights = data.searchTermInsights;
+    if (!insights) {
+      return;
+    }
+    const all = []
+      .concat(insights.uniqueKeywords || [])
+      .concat(insights.uniqueAsins || []);
+    all.forEach((item) => {
+      if (!item?.term) {
+        return;
+      }
+      candidates.push({
+        adType,
+        term: item.term,
+        isAsin: Boolean(item.isAsin),
+        sales: item.sales || 0,
+        spend: item.spend || 0,
+      });
+    });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  candidates.sort((a, b) => {
+    if (b.sales !== a.sales) {
+      return b.sales - a.sales;
+    }
+    return b.spend - a.spend;
+  });
+  const best = candidates[0];
+  const typeLabel = best.isAsin ? "ASIN" : "keyword";
+  return {
+    title: "Search Term Gold",
+    description: `Top untargeted ${typeLabel}: "${best.term}" (${formatCurrency(
+      best.sales
+    )} sales).`,
+    tag: "Insight",
+    target: {
+      section: "search-terms",
+      adTypeFilter: best.adType,
+      searchTermFilter: best.isAsin ? "asins" : "terms",
+      searchQuery: best.term,
+      viewMode: "table",
+    },
+  };
+}
+
+function buildAcosOptimizationRecommendation() {
+  const candidates = [];
+  Object.entries(state.results.adTypes || {}).forEach(([adType, data]) => {
+    (data.campaignBuckets || []).forEach((bucket) => {
+      if (!bucket?.bucket || bucket.bucket === "No Sales") {
+        return;
+      }
+      const order = bucketSortOrder(bucket.bucket, "acos");
+      candidates.push({
+        adType,
+        bucketLabel: bucket.bucket,
+        spend: bucket.spend || 0,
+        order,
+      });
+    });
+  });
+  if (!candidates.length) {
+    return null;
+  }
+  candidates.sort((a, b) => {
+    if (b.order !== a.order) {
+      return b.order - a.order;
+    }
+    return b.spend - a.spend;
+  });
+  const worst = candidates[0];
+  return {
+    title: `A+ Optimization (${worst.adType})`,
+    description: `Highest ACoS bucket: ${worst.bucketLabel} (${formatCurrency(
+      worst.spend
+    )} spend).`,
+    tag: "Strategy",
+    target: {
+      section: "campaigns",
+      adTypeFilter: worst.adType,
+      groupedBy: "acos",
+      viewMode: "groups",
+      selectedBucket: worst.bucketLabel,
+      noSalesFilter: "all",
+    },
+  };
+}
+
 function renderAiRecommendationsHub(useGrid) {
   const tilesClass = useGrid ? "ai-tiles ai-tiles-grid" : "ai-tiles";
+  const recommendations = buildAiRecommendations();
+  state.ai.recommendations = recommendations;
+  const tiles = recommendations
+    .map((rec, index) => {
+      const clickable = Boolean(rec.target) && !rec.disabled;
+      const classes = ["ai-tile", clickable ? "clickable" : "", rec.disabled ? "disabled" : ""]
+        .filter(Boolean)
+        .join(" ");
+      const dataAttr = clickable ? `data-recommendation-index="${index}"` : "";
+      const tagLabel = rec.tag || "Insight";
+      const tagClass = tagLabel.toLowerCase() === "strategy" ? "strategy" : "insight";
+      return `
+        <div class="${classes}" ${dataAttr}>
+          <div class="ai-dot"></div>
+          <div>
+            <div class="row space-between">
+              <div class="ai-title">${escapeHtml(rec.title)}</div>
+              <span class="chip ai-tag ${tagClass}">${escapeHtml(tagLabel)}</span>
+            </div>
+            <div class="muted">${escapeHtml(rec.description)}</div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
   return `
     <div class="card ai-spotlight">
       <div class="row space-between">
-        <strong>AI Recommendations Hub</strong>
+        <strong>Insights Hub</strong>
         <span class="chip">Priority Insights</span>
       </div>
       <p class="muted">
@@ -1041,27 +1243,7 @@ function renderAiRecommendationsHub(useGrid) {
         current upload. Think of it as your daily mission brief.
       </p>
       <div class="${tilesClass}">
-        <div class="ai-tile">
-          <div class="ai-dot"></div>
-          <div>
-            <div class="ai-title">Spend Share Risk</div>
-            <div class="muted">Flag top spenders with weak CVR.</div>
-          </div>
-        </div>
-        <div class="ai-tile">
-          <div class="ai-dot"></div>
-          <div>
-            <div class="ai-title">Search Term Gold</div>
-            <div class="muted">Highlight winning queries to harvest.</div>
-          </div>
-        </div>
-        <div class="ai-tile">
-          <div class="ai-dot"></div>
-          <div>
-            <div class="ai-title">A+ Optimization</div>
-            <div class="muted">Pinpoint high ACoS pockets to fix.</div>
-          </div>
-        </div>
+        ${tiles}
       </div>
       ${renderHealthWarnings()}
     </div>
@@ -1069,6 +1251,23 @@ function renderAiRecommendationsHub(useGrid) {
 }
 
 function renderAiChatPanel() {
+  const draft = state.ai.chat.draft || "";
+  const hasMessages = state.ai.chat.messages.length > 0;
+  const isBusy = state.ai.chat.isBusy;
+  const hasKey = Boolean(state.ai.apiKey);
+  const canSend = hasKey && !isBusy && draft.trim().length > 0;
+  const threadContent = hasMessages
+    ? state.ai.chat.messages.map(renderAiChatMessage).join("")
+    : `
+      <p class="muted">
+        Ask a question to explore your upload. Insights can reference campaigns,
+        ad groups, keywords, placements, and search terms.
+      </p>
+    `;
+  const thinking = isBusy
+    ? `<div class="ai-chat-message assistant thinking">Thinking...</div>`
+    : "";
+
   return `
     <div class="card ai-chat">
       <div class="ai-chat-header">
@@ -1077,24 +1276,38 @@ function renderAiChatPanel() {
           <div class="muted">Ask about performance, actions, and what to fix next.</div>
         </div>
       </div>
-      <div class="ai-chat-chips">
-        <button class="chip">Summarize top spend risks</button>
-        <button class="chip">Explain ACoS outliers</button>
-        <button class="chip">Which campaigns to pause?</button>
-        <button class="chip">Where is wasted spend?</button>
-        <button class="chip">Best keywords to scale</button>
-        <button class="chip">Branded vs non‑branded split</button>
+      <div class="ai-chat-chips" id="ai-chat-chips">
+        <button class="chip" type="button">Summarize top spend risks</button>
+        <button class="chip" type="button">Explain ACoS outliers</button>
+        <button class="chip" type="button">Which campaigns to pause?</button>
+        <button class="chip" type="button">Where is wasted spend?</button>
+        <button class="chip" type="button">Best keywords to scale</button>
+        <button class="chip" type="button">Branded vs non???branded split</button>
       </div>
-      <div class="ai-chat-thread">
-        <p class="muted">
-          Ask a question to explore your upload. Insights can reference campaigns,
-          ad groups, keywords, placements, and search terms.
-        </p>
+      <div class="ai-chat-thread" id="ai-chat-thread">
+        ${threadContent}
+        ${thinking}
       </div>
       <div class="ai-chat-input">
-        <textarea rows="3" placeholder="Ask the AI to analyze your account..."></textarea>
-        <button class="btn primary" disabled>Send</button>
+        <textarea
+          id="ai-chat-textarea"
+          rows="3"
+          placeholder="Ask the AI to analyze your account..."
+        >${escapeHtml(draft)}</textarea>
+        <button id="ai-chat-send" class="btn primary" ${canSend ? "" : "disabled"}>
+          Send
+        </button>
       </div>
+    </div>
+  `;
+}
+
+function renderAiChatMessage(message) {
+  const role = message.role === "user" ? "user" : "assistant";
+  const errorClass = message.isError ? " error" : "";
+  return `
+    <div class="ai-chat-message ${role}${errorClass}">
+      ${escapeHtml(message.content || "")}
     </div>
   `;
 }
@@ -1136,6 +1349,48 @@ function attachOverviewHandlers() {
       renderInspector();
     });
   });
+  attachAiRecommendationHandlers();
+}
+
+function attachAiRecommendationHandlers() {
+  workspaceContent.querySelectorAll("[data-recommendation-index]").forEach((tile) => {
+    tile.addEventListener("click", () => {
+      const index = Number(tile.dataset.recommendationIndex);
+      const recommendation = state.ai.recommendations?.[index];
+      if (!recommendation?.target) {
+        return;
+      }
+      applyRecommendationTarget(recommendation.target);
+    });
+  });
+}
+
+function applyRecommendationTarget(target) {
+  if (!target?.section) {
+    return;
+  }
+  state.ui.activeSection = target.section;
+  const sectionConfig = getSectionConfig(target.section);
+  state.ui.viewMode = target.viewMode || sectionConfig.defaultView;
+  if (target.adTypeFilter) {
+    state.ui.adTypeFilter = target.adTypeFilter;
+  }
+  if (target.groupedBy) {
+    state.ui.groupedBy = target.groupedBy;
+  }
+  if (target.noSalesFilter) {
+    state.ui.noSalesFilter = target.noSalesFilter;
+  }
+  if (target.searchTermFilter) {
+    state.ui.searchTermFilter = target.searchTermFilter;
+  }
+  if (target.searchQuery !== undefined) {
+    state.ui.searchQuery = target.searchQuery;
+  }
+  state.ui.selectedBucket = target.selectedBucket || null;
+  state.ui.selectedEntity = null;
+  state.ui.inspectorOpen = false;
+  renderApp();
 }
 
 function stripAdTypePrefix(key) {
@@ -1811,6 +2066,7 @@ function renderInspector() {
     inspectorTitle.textContent = "Inspector";
     inspectorType.textContent = "";
     inspectorBody.innerHTML = renderAiChatPanel();
+    attachAiChatHandlers();
     return;
   }
   inspectorTitle.textContent = entity.label;
@@ -2394,6 +2650,253 @@ function updateAiControls() {
   if (aiStatus) {
     aiStatus.textContent = state.ai.status;
   }
+  updateAiChatControls();
+}
+
+function updateAiChatControls() {
+  const textarea = inspectorBody?.querySelector("#ai-chat-textarea");
+  const sendButton = inspectorBody?.querySelector("#ai-chat-send");
+  if (!textarea || !sendButton) {
+    return;
+  }
+  const hasText = textarea.value.trim().length > 0;
+  sendButton.disabled = !state.ai.apiKey || state.ai.chat.isBusy || !hasText;
+}
+
+function buildLeanResults(results) {
+  if (!results || !results.adTypes) {
+    return results || null;
+  }
+  const stripBucketDetails = (items = []) =>
+    items.map((item) => {
+      const cleaned = {};
+      if (Object.prototype.hasOwnProperty.call(item, "bucket")) {
+        cleaned.bucket = item.bucket;
+      }
+      if (Object.prototype.hasOwnProperty.call(item, "label")) {
+        cleaned.label = item.label;
+      }
+      ["spend", "sales", "spendPct", "salesPct", "avgCpc", "acos", "roas"].forEach(
+        (key) => {
+          if (Object.prototype.hasOwnProperty.call(item, key)) {
+            cleaned[key] = item[key];
+          }
+        }
+      );
+      return cleaned;
+    });
+  const summarizePausedBuckets = (pausedBuckets) => {
+    if (!pausedBuckets) {
+      return null;
+    }
+    return {
+      campaigns: pausedBuckets.campaigns,
+      adGroups: pausedBuckets.adGroups,
+      targets: pausedBuckets.targets,
+    };
+  };
+  const summarizeMatchTypeMix = (flag) => {
+    if (!flag) {
+      return null;
+    }
+    return { count: flag.count };
+  };
+  const summarizeSearchTermInsights = (insights) => {
+    if (!insights) {
+      return null;
+    }
+    return {
+      uniqueKeywordsCount: insights.uniqueKeywords?.length || 0,
+      uniqueAsinsCount: insights.uniqueAsins?.length || 0,
+    };
+  };
+  const adTypes = Object.entries(results.adTypes).reduce((acc, [adType, data]) => {
+    acc[adType] = {
+      summary: data.summary,
+      campaignBuckets: stripBucketDetails(data.campaignBuckets),
+      keywordBuckets: stripBucketDetails(data.keywordBuckets),
+      asinBuckets: stripBucketDetails(data.asinBuckets),
+      matchTypeBuckets: stripBucketDetails(data.matchTypeBuckets),
+      placementBuckets: stripBucketDetails(data.placementBuckets),
+      biddingStrategyBuckets: stripBucketDetails(data.biddingStrategyBuckets),
+      pausedBuckets: summarizePausedBuckets(data.pausedBuckets),
+      brandedBucket: data.brandedBucket,
+      matchTypeMixFlag: summarizeMatchTypeMix(data.matchTypeMixFlag),
+      sbVideoPresence: data.sbVideoPresence,
+      searchTermInsights: summarizeSearchTermInsights(data.searchTermInsights),
+    };
+    return acc;
+  }, {});
+  return {
+    engineVersion: results.engineVersion,
+    generatedAt: results.generatedAt,
+    adTypes,
+  };
+}
+
+function trimChatContext(context, maxChars, mode = "auto") {
+  const limit = maxChars || AI_CHAT_MAX_CONTEXT_CHARS;
+
+  if (mode === "minimal") {
+    const minimal = {
+      session: context.session,
+      brandAliases: context.brandAliases,
+      accountTotals: context.accountTotals,
+      results: buildLeanResults(context.results),
+      contextTrimmed: true,
+      trimReason: "Context trimmed to summary-only.",
+    };
+    return { text: JSON.stringify(minimal), trimmed: true, reason: minimal.trimReason };
+  }
+
+  let text = JSON.stringify(context);
+  if (text.length <= limit) {
+    return { text, trimmed: false, reason: "" };
+  }
+
+  const minimal = {
+    session: context.session,
+    brandAliases: context.brandAliases,
+    accountTotals: context.accountTotals,
+    results: buildLeanResults(context.results),
+    contextTrimmed: true,
+    trimReason: "Context trimmed to summary-only.",
+  };
+  text = JSON.stringify(minimal);
+  return { text, trimmed: true, reason: minimal.trimReason };
+}
+
+function buildAiChatContextText(options = {}) {
+  const { maxChars, mode = "auto" } = options;
+  const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
+  const context = {
+    session: session
+      ? {
+          id: session.id,
+          name: session.name,
+          date: session.date,
+          notes: session.notes,
+        }
+      : null,
+    brandAliases: state.brandAliases,
+    accountTotals: state.accountTotals,
+    results: buildLeanResults(state.results),
+  };
+  const { text, trimmed, reason } = trimChatContext(context, maxChars, mode);
+  state.ai.chat.contextTrimmed = trimmed;
+  state.ai.chat.trimReason = reason || "";
+  return text;
+}
+
+function buildChatMessages(history, options = {}) {
+  const { historyLimit = AI_CHAT_MAX_HISTORY, maxChars, mode } = options;
+  const contextText = buildAiChatContextText({ maxChars, mode });
+  const contextMessage = {
+    role: "user",
+    content: `Context data (JSON). Use this as the source of truth for analysis:
+${contextText}`,
+  };
+  const trimmedHistory = (history || [])
+    .filter((item) => !item.isError)
+    .slice(-historyLimit)
+    .map((item) => ({ role: item.role, content: item.content }));
+  return [contextMessage, ...trimmedHistory];
+}
+
+function attachAiChatHandlers() {
+  const textarea = inspectorBody?.querySelector("#ai-chat-textarea");
+  const sendButton = inspectorBody?.querySelector("#ai-chat-send");
+  const chips = inspectorBody?.querySelectorAll("#ai-chat-chips .chip");
+  if (!textarea || !sendButton) {
+    return;
+  }
+
+  textarea.addEventListener("input", () => {
+    state.ai.chat.draft = textarea.value;
+    updateAiChatControls();
+  });
+
+  sendButton.addEventListener("click", () => {
+    sendAiChatMessage();
+  });
+
+  chips?.forEach((chip) => {
+    chip.addEventListener("click", () => {
+      state.ai.chat.draft = chip.textContent || "";
+      textarea.value = state.ai.chat.draft;
+      textarea.focus();
+      updateAiChatControls();
+    });
+  });
+
+  updateAiChatControls();
+  requestAnimationFrame(() => {
+    const thread = inspectorBody?.querySelector("#ai-chat-thread");
+    if (thread) {
+      thread.scrollTop = thread.scrollHeight;
+    }
+  });
+}
+
+async function sendAiChatMessage() {
+  const textarea = inspectorBody?.querySelector("#ai-chat-textarea");
+  const message = textarea?.value.trim() || "";
+  if (!message || !state.ai.apiKey || state.ai.chat.isBusy) {
+    return;
+  }
+
+  state.ai.chat.messages.push({ role: "user", content: message });
+  state.ai.chat.draft = "";
+  state.ai.chat.isBusy = true;
+  renderInspector();
+
+  try {
+    const instructions =
+      "You are an Amazon Ads audit analyst. Provide concise, actionable insights.";
+    let responseText = "";
+    try {
+      responseText = await requestChatResponse({
+        apiKey: state.ai.apiKey,
+        model: state.ai.model,
+        instructions,
+        messages: buildChatMessages(state.ai.chat.messages),
+      });
+    } catch (error) {
+      if (!isContextLengthError(error)) {
+        throw error;
+      }
+      responseText = await requestChatResponse({
+        apiKey: state.ai.apiKey,
+        model: state.ai.model,
+        instructions,
+        messages: buildChatMessages(state.ai.chat.messages, {
+          mode: "minimal",
+          historyLimit: 6,
+          maxChars: 25000,
+        }),
+      });
+      responseText = `${responseText}\n\n(Context trimmed to fit model limits.)`;
+    }
+    state.ai.chat.messages.push({ role: "assistant", content: responseText });
+  } catch (error) {
+    const messageText = error?.message || "AI request failed.";
+    state.ai.chat.messages.push({
+      role: "assistant",
+      content: `Error: ${messageText}`,
+      isError: true,
+    });
+  } finally {
+    state.ai.chat.isBusy = false;
+    renderInspector();
+  }
+}
+
+function isContextLengthError(error) {
+  const message = String(error?.message || "");
+  return (
+    message.includes("context_length_exceeded") ||
+    message.includes("context window")
+  );
 }
 
 async function generateSummaries() {

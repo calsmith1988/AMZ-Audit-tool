@@ -146,3 +146,46 @@ export async function requestAuditSummaries({ apiKey, model, systemText, userTex
     throw new Error("Failed to parse AI summary JSON.");
   }
 }
+
+export async function requestChatResponse({ apiKey, model, instructions, messages }) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      instructions,
+      input: messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  const outputText = extractOutputText(payload);
+  if (!outputText) {
+    throw new Error("OpenAI response missing output text.");
+  }
+  return outputText;
+}
+
+function extractOutputText(payload) {
+  if (!payload) {
+    return "";
+  }
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) {
+    return payload.output_text;
+  }
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  const text = output
+    .flatMap((item) => (Array.isArray(item.content) ? item.content : []))
+    .filter((content) => content.type === "output_text")
+    .map((content) => content.text)
+    .join("");
+  return text.trim();
+}

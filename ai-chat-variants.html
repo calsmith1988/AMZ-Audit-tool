@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Chat Variants</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Parkinsans:wght@300;400;500;600;700&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #fbfbfc;
+        --surface: #ffffff;
+        --surface-2: #f6f7f9;
+        --border: rgba(15, 23, 42, 0.1);
+        --text: rgba(15, 23, 42, 0.92);
+        --text-muted: rgba(15, 23, 42, 0.62);
+        --accent: #d97706;
+        --accent-soft: rgba(217, 119, 6, 0.16);
+        --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+        --r-sm: 10px;
+        --r-md: 14px;
+        --r-lg: 18px;
+        --sp-2: 8px;
+        --sp-3: 12px;
+        --sp-4: 16px;
+        --sp-5: 20px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Parkinsans", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        padding: 24px;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+
+      p {
+        margin: 0 0 16px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 20px;
+      }
+
+      .mockup {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        padding: var(--sp-4);
+        box-shadow: var(--shadow-1);
+        display: grid;
+        gap: var(--sp-4);
+      }
+
+      .title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sp-3);
+      }
+
+      .badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: #7a4a05;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .chat {
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: #fff;
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .bubble {
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: #f3f4f7;
+        font-size: 12px;
+      }
+
+      .bubble.user {
+        background: var(--accent-soft);
+      }
+
+      .input {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .input span {
+        padding: 6px 8px;
+        border-radius: var(--r-sm);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .btn {
+        background: var(--accent);
+        color: white;
+        border-radius: var(--r-sm);
+        padding: 6px 10px;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      .section-label {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-bottom: 6px;
+      }
+
+      .pill-row {
+        display: flex;
+        gap: 8px;
+        overflow: hidden;
+      }
+
+      .select {
+        padding: 6px 8px;
+        border-radius: var(--r-sm);
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Option A Variants (Less Clutter)</h1>
+    <p>
+      Three ways to reduce chip + chat clutter while keeping quick prompts.
+    </p>
+
+    <div class="grid">
+      <section class="mockup">
+        <div class="title">
+          <strong>Option A1: Collapsible Prompts</strong>
+          <span class="badge">Toggle</span>
+        </div>
+        <div>
+          <div class="section-label">Quick prompts</div>
+          <div class="pill-row">
+            <span class="chip">Spend concentration?</span>
+            <span class="chip">Top sales drivers?</span>
+            <span class="chip">High spend, low sales?</span>
+          </div>
+        </div>
+        <div class="chat">
+          <div class="bubble">Ask about this section…</div>
+          <div class="bubble user">What should I cut first?</div>
+          <div class="bubble">Here’s a quick priority list…</div>
+          <div class="input">
+            <span>Ask a question…</span>
+            <div class="btn">Send</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mockup">
+        <div class="title">
+          <strong>Option A2: Prompt Selector</strong>
+          <span class="badge">Dropdown</span>
+        </div>
+        <div>
+          <div class="section-label">Suggested question</div>
+          <select class="select">
+            <option>Where is spend concentrated?</option>
+            <option>Top sales share drivers?</option>
+            <option>Any high spend / low sales?</option>
+            <option>Best RoAS groups?</option>
+          </select>
+        </div>
+        <div class="chat">
+          <div class="bubble">Ask about this section…</div>
+          <div class="input">
+            <span>Ask a question…</span>
+            <div class="btn">Send</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mockup">
+        <div class="title">
+          <strong>Option A3: Inline Hints</strong>
+          <span class="badge">Minimal</span>
+        </div>
+        <div class="chat">
+          <div class="bubble">
+            Try: “Where is spend concentrated?” or “Which groups drive sales share?”
+          </div>
+          <div class="input">
+            <span>Ask a question…</span>
+            <div class="btn">Send</div>
+          </div>
+        </div>
+        <div class="chips">
+          <span class="chip">Spend concentration?</span>
+          <span class="chip">Top sales drivers?</span>
+          <span class="chip">High spend, low sales?</span>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

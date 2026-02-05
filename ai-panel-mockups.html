@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Panel Layout Mockups</title>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Parkinsans:wght@300;400;500;600;700&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #fbfbfc;
+        --surface: #ffffff;
+        --surface-2: #f6f7f9;
+        --border: rgba(15, 23, 42, 0.1);
+        --text: rgba(15, 23, 42, 0.92);
+        --text-muted: rgba(15, 23, 42, 0.62);
+        --accent: #d97706;
+        --accent-soft: rgba(217, 119, 6, 0.16);
+        --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+        --r-sm: 10px;
+        --r-md: 14px;
+        --r-lg: 18px;
+        --sp-2: 8px;
+        --sp-3: 12px;
+        --sp-4: 16px;
+        --sp-5: 20px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Parkinsans", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        padding: 24px;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin: 0 0 6px;
+      }
+
+      p {
+        margin: 0 0 16px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 20px;
+      }
+
+      .mockup {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        padding: var(--sp-4);
+        box-shadow: var(--shadow-1);
+        display: grid;
+        gap: var(--sp-4);
+      }
+
+      .title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sp-3);
+      }
+
+      .badge {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: #7a4a05;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        padding: var(--sp-3);
+        background: var(--surface-2);
+        display: grid;
+        gap: var(--sp-3);
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-muted);
+      }
+
+      .card {
+        padding: 10px;
+        border-radius: var(--r-sm);
+        border: 1px solid var(--border);
+        background: #fff;
+        font-size: 12px;
+      }
+
+      .ai-spotlight {
+        border: 1px solid rgba(217, 119, 6, 0.3);
+        background: linear-gradient(
+          135deg,
+          rgba(217, 119, 6, 0.08),
+          rgba(255, 255, 255, 0.6)
+        );
+      }
+
+      .ai-tiles {
+        display: grid;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .ai-tile {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px;
+        align-items: start;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: #fff;
+        font-size: 12px;
+      }
+
+      .ai-dot {
+        width: 10px;
+        height: 10px;
+        margin-top: 5px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.15);
+      }
+
+      .ai-title {
+        font-weight: 600;
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+
+      .ai-text {
+        color: var(--text-muted);
+      }
+
+      .chat {
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: #fff;
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .bubble {
+        padding: 8px 10px;
+        border-radius: 10px;
+        background: #f3f4f7;
+        font-size: 12px;
+      }
+
+      .bubble.user {
+        background: var(--accent-soft);
+      }
+
+      .input {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .input span {
+        padding: 6px 8px;
+        border-radius: var(--r-sm);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      .btn {
+        background: var(--accent);
+        color: white;
+        border-radius: var(--r-sm);
+        padding: 6px 10px;
+        font-size: 11px;
+        text-align: center;
+      }
+
+      .tabs {
+        display: inline-flex;
+        gap: 8px;
+      }
+
+      .tab {
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 11px;
+      }
+
+      .tab.active {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: #7a4a05;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>AI Panel UX Mockups</h1>
+    <p>
+      Three layout options on one page. These are structural mockups only, meant
+      to show hierarchy and placement.
+    </p>
+
+    <div class="grid">
+      <section class="mockup">
+        <div class="title">
+          <strong>Option D: Recommendations + Chat</strong>
+          <span class="badge">AI Hub + Chat</span>
+        </div>
+        <div class="panel">
+          <div class="card ai-spotlight">
+            <div class="title">
+              <strong>AI Recommendations Hub</strong>
+              <span class="badge">Priority Insights</span>
+            </div>
+            <p class="muted">
+              This panel surfaces high-impact opportunities tied to the active
+              section.
+            </p>
+            <div class="ai-tiles">
+              <div class="ai-tile">
+                <span class="ai-dot"></span>
+                <div>
+                  <div class="ai-title">Spend Share Risk</div>
+                  <div class="ai-text">
+                    ACoS 100%+ band is draining spend with low sales share.
+                  </div>
+                </div>
+              </div>
+              <div class="ai-tile">
+                <span class="ai-dot"></span>
+                <div>
+                  <div class="ai-title">Search Term Gold</div>
+                  <div class="ai-text">
+                    Surface high-converting terms to harvest as keywords.
+                  </div>
+                </div>
+              </div>
+              <div class="ai-tile">
+                <span class="ai-dot"></span>
+                <div>
+                  <div class="ai-title">A+ Optimization</div>
+                  <div class="ai-text">
+                    Bid down low CVR targets and reallocate to winners.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="chips">
+              <span class="chip">Where is spend concentrated?</span>
+              <span class="chip">Top sales share drivers?</span>
+              <span class="chip">Any high spend / low sales?</span>
+            </div>
+            <div class="chat">
+              <div class="bubble">Ask about this section…</div>
+              <div class="bubble user">What should I cut first?</div>
+              <div class="bubble">Here’s a quick priority list…</div>
+              <div class="input">
+                <span>Ask a question…</span>
+                <div class="btn">Send</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="mockup">
+        <div class="title">
+          <strong>Option A: Chat Only</strong>
+          <span class="badge">Chat</span>
+        </div>
+        <div class="chips">
+          <span class="chip">Where is spend concentrated?</span>
+          <span class="chip">Top sales share drivers?</span>
+          <span class="chip">Any high spend / low sales?</span>
+        </div>
+        <div class="chat">
+          <div class="bubble">Ask about this section…</div>
+          <div class="bubble user">What should I cut first?</div>
+          <div class="bubble">Here’s a quick priority list…</div>
+          <div class="input">
+            <span>Ask a question…</span>
+            <div class="btn">Send</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mockup">
+        <div class="title">
+          <strong>Option B: Tabs</strong>
+          <span class="badge">Recommendations / Chat</span>
+        </div>
+        <div class="tabs">
+          <span class="tab active">Recommendations</span>
+          <span class="tab">Chat</span>
+        </div>
+        <div class="panel">
+          <div class="card">
+            High spend + low CVR buckets detected. Prioritize bid cuts.
+          </div>
+          <div class="card">Search term winners to harvest into keywords.</div>
+          <div class="card">RoAS outliers: review targeting expansion.</div>
+        </div>
+      </section>
+
+      <section class="mockup">
+        <div class="title">
+          <strong>Option C: Split Panel</strong>
+          <span class="badge">Snippets + Chips + Chat</span>
+        </div>
+        <div class="panel">
+          <div class="card">
+            Recommendations snippets (3–5) at top for quick scanning.
+          </div>
+          <div class="chips">
+            <span class="chip">Spend share by band?</span>
+            <span class="chip">Best RoAS groups?</span>
+            <span class="chip">Paused targets impact?</span>
+          </div>
+          <div class="chat">
+            <div class="bubble">Ask deeper questions here…</div>
+            <div class="input">
+              <span>Ask a question…</span>
+              <div class="btn">Send</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

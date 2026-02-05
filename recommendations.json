@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "recommendations": [
+    {
+      "id": "template_rule",
+      "enabled": false,
+      "priority": "High",
+      "title": "Template Title",
+      "description": "Describe the insight in one sentence.",
+      "tag": "Insight",
+      "section": "campaigns",
+      "adType": "SP",
+      "rule": {
+        "source": "campaignBuckets",
+        "bucket": "No Sales",
+        "metric": "spend",
+        "min": 0
+      },
+      "sort": {
+        "by": "spend",
+        "direction": "desc"
+      },
+      "limit": 1,
+      "click": {
+        "section": "campaigns",
+        "viewMode": "groups",
+        "groupedBy": "acos",
+        "selectedBucket": "No Sales",
+        "adTypeFilter": "SP",
+        "searchTermFilter": "terms",
+        "searchQuery": ""
+      }
+    }
+  ]
+}
