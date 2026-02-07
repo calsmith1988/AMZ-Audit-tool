@@ -709,12 +709,14 @@ img {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: var(--sp-3);
 }
 
 .ai-chat-title {
   font-size: 14px;
   font-weight: 600;
 }
+
 
 .ai-chat-chips {
   display: flex;
@@ -799,6 +801,93 @@ img {
 .ai-chat-input .btn {
   height: 36px;
   padding: 8px 14px;
+}
+
+.ai-actions {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.ai-actions-header {
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.ai-action-list {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.ai-action-card {
+  border: 1px solid var(--border);
+}
+
+.ai-action-card.done {
+  opacity: 0.65;
+}
+
+.ai-action-card.dismissed {
+  opacity: 0.5;
+}
+
+.ai-action-empty {
+  border: 1px dashed var(--border);
+}
+
+.ai-action-metrics {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-action-footer {
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.ai-action-meta {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-action-controls .btn {
+  height: 30px;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+
+.ai-action-type {
+  border: 1px solid transparent;
+}
+
+.ai-action-type.type-pause {
+  background: rgba(220, 38, 38, 0.12);
+  border-color: rgba(220, 38, 38, 0.35);
+  color: #b91c1c;
+}
+
+.ai-action-type.type-add_negative {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.35);
+  color: #b45309;
+}
+
+.ai-action-type.type-reduce_bid {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #1d4ed8;
+}
+
+.ai-action-type.type-scale {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #0f766e;
+}
+
+.ai-action-type.type-investigate {
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.35);
+  color: #475569;
 }
 
 @media (max-width: 1100px) {

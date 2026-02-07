@@ -12,6 +12,7 @@ const REQUIRED_FIELDS = ["spend", "sales", "clicks", "orders"];
 const AD_TYPE_OPTIONS = ["All", "SP", "SB", "SD"];
 const AI_CHAT_MAX_CONTEXT_CHARS = 60000;
 const AI_CHAT_MAX_HISTORY = 10;
+const ACTION_PLAN_MAX_ITEMS = 20;
 
 const state = {
   sessions: [],
@@ -33,6 +34,11 @@ const state = {
     recommendations: [],
     recommendationRules: null,
     recommendationRulesStatus: "",
+    actionPlan: null,
+    actionPlanStatus: "",
+    actionPlanError: "",
+    actionPlanAiStatus: "",
+    actionPlanAiError: "",
     chat: {
       messages: [],
       isBusy: false,
@@ -196,6 +202,7 @@ function setActiveSession(sessionId) {
   state.brandAliases = session.brandAliases;
   state.accountTotals = session.accountTotals;
   state.health = session.health;
+  resetActionPlan("Session changed. Generate a new action plan.");
   updateSessionSelect();
   renderMappingPanel();
   renderApp();
@@ -738,6 +745,7 @@ function recompute() {
       .filter((row) => String(row.entityNormalized) === "campaign")
   );
   resetAiSummaries("Data updated. Generate summaries to refresh AI insights.");
+  resetActionPlan("Data updated. Generate a new action plan.");
   renderApp();
 }
 
@@ -1061,6 +1069,7 @@ function renderOverview() {
   return `
     <div class="kpi-grid">${cards}</div>
     ${renderAiRecommendationsHub(true)}
+    ${renderActionHub()}
   `;
 }
 
@@ -1560,6 +1569,78 @@ function renderAiRecommendationsHub(useGrid) {
   `;
 }
 
+function renderActionHub() {
+  const hasData = Boolean(state.results);
+  const plan = state.ai.actionPlan;
+  const status = state.ai.actionPlanStatus;
+  const error = state.ai.actionPlanError;
+  const aiStatus = state.ai.actionPlanAiStatus;
+  const aiError = state.ai.actionPlanAiError;
+  const items = plan?.items || [];
+  const isBusy = status === "loading" || aiStatus === "loading";
+  const buttonLabel = plan ? "Regenerate Action Plan" : "Generate Action Plan";
+  const canGenerate = hasData && !isBusy;
+  const generatedAt = plan?.generatedAt
+    ? new Date(plan.generatedAt).toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "";
+  const statusLine = (() => {
+    if (!hasData) {
+      return "Upload a bulk sheet to generate an action plan.";
+    }
+    if (status === "loading") {
+      return "Generating action plan...";
+    }
+    if (status === "empty") {
+      return "No high-priority actions found.";
+    }
+    if (status === "error") {
+      return error || "Action plan generation failed.";
+    }
+    if (aiStatus === "loading") {
+      return "Enriching actions with AI...";
+    }
+    if (aiStatus === "error") {
+      return aiError || "AI enrichment failed. Showing deterministic reasons.";
+    }
+    if (plan && generatedAt) {
+      return `Generated ${generatedAt}.`;
+    }
+    return "Generate a prioritized action queue from the current upload.";
+  })();
+
+  const actionCards = items.length
+    ? items.map(renderActionCard).join("")
+    : `
+      <div class="card ai-action-empty">
+        <p class="muted">No action plan yet. Generate one to see prioritized fixes.</p>
+      </div>
+    `;
+
+  return `
+    <div class="card ai-action-hub ai-actions">
+      <div class="row space-between">
+        <strong>Action Queue</strong>
+        <span class="chip">Action Plan</span>
+      </div>
+      <div class="row space-between ai-actions-header">
+        <div class="muted">${escapeHtml(statusLine)}</div>
+        <button id="ai-action-generate" class="btn primary" ${
+          canGenerate ? "" : "disabled"
+        }>${buttonLabel}</button>
+      </div>
+      ${plan?.summary ? `<p class="muted">${escapeHtml(plan.summary)}</p>` : ""}
+      <div class="ai-action-list">
+        ${actionCards}
+      </div>
+    </div>
+  `;
+}
+
 function renderAiChatPanel() {
   const draft = state.ai.chat.draft || "";
   const hasMessages = state.ai.chat.messages.length > 0;
@@ -1622,6 +1703,94 @@ function renderAiChatMessage(message) {
   `;
 }
 
+function renderActionCard(item) {
+  const statusClass =
+    item.status === "done"
+      ? " done"
+      : item.status === "dismissed"
+        ? " dismissed"
+        : "";
+  const typeLabel = formatActionTypeLabel(item.type);
+  const priority = Number.isFinite(item.priority) ? Math.round(item.priority) : 0;
+  const confidence = Number.isFinite(item.confidence)
+    ? Math.round(item.confidence * 100)
+    : 0;
+  const metrics = renderActionMetrics(item.metrics);
+  const rationale = item.rationale || item.summary || "";
+  const doneDisabled = item.status === "done" ? "disabled" : "";
+  const dismissDisabled = item.status === "dismissed" ? "disabled" : "";
+  return `
+    <div class="card ai-action-card${statusClass}">
+      <div class="row space-between">
+        <strong>${escapeHtml(item.title)}</strong>
+        <span class="chip ai-action-type type-${item.type}">${escapeHtml(
+          typeLabel
+        )}</span>
+      </div>
+      ${rationale ? `<p class="muted">${escapeHtml(rationale)}</p>` : ""}
+      ${metrics}
+      <div class="row space-between ai-action-footer">
+        <div class="row ai-action-meta">
+          <span class="chip">Priority ${priority}</span>
+          <span class="chip">Conf ${confidence}%</span>
+          <span class="chip">Status ${escapeHtml(item.status || "proposed")}</span>
+        </div>
+        <div class="row ai-action-controls">
+          <button class="btn ghost" data-action-jump="${escapeHtml(item.id)}">Jump to data</button>
+          <button class="btn ghost" data-action-done="${escapeHtml(
+            item.id
+          )}" ${doneDisabled}>Mark done</button>
+          <button class="btn ghost" data-action-dismiss="${escapeHtml(
+            item.id
+          )}" ${dismissDisabled}>Dismiss</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+const ACTION_TYPE_LABELS = {
+  reduce_bid: "Reduce bid",
+  pause: "Pause",
+  add_negative: "Add negative",
+  scale: "Scale",
+  investigate: "Investigate",
+};
+
+function formatActionTypeLabel(type) {
+  return ACTION_TYPE_LABELS[type] || "Action";
+}
+
+function renderActionMetrics(metrics = {}) {
+  const chips = [];
+  if (Number.isFinite(metrics.spend)) {
+    chips.push(`Spend ${formatCurrency(metrics.spend)}`);
+  }
+  if (Number.isFinite(metrics.sales)) {
+    chips.push(`Sales ${formatCurrency(metrics.sales)}`);
+  }
+  if (Number.isFinite(metrics.acos)) {
+    chips.push(`ACoS ${formatPercent(metrics.acos)}`);
+  }
+  if (Number.isFinite(metrics.roas)) {
+    chips.push(`ROAS ${formatRoas(metrics.roas)}`);
+  }
+  if (Number.isFinite(metrics.cvr)) {
+    chips.push(`CVR ${formatPercent(metrics.cvr)}`);
+  }
+  if (Number.isFinite(metrics.clicks)) {
+    chips.push(`Clicks ${formatNumber(metrics.clicks)}`);
+  }
+  if (!chips.length) {
+    return "";
+  }
+  return `
+    <div class="row ai-action-metrics">
+      ${chips.map((chip) => `<span class="chip">${escapeHtml(chip)}</span>`).join("")}
+    </div>
+  `;
+}
+
 function renderAiInsightCards() {
   if (!state.ai.report) {
     return `<div class="card"><p class="muted">Generate summaries to see AI insights.</p></div>`;
@@ -1648,6 +1817,480 @@ function renderAiInsightCards() {
   return `<div class="masonry">${cards}</div>`;
 }
 
+function updateActionStatus(id, status) {
+  if (!id || !state.ai.actionPlan?.items?.length) {
+    return;
+  }
+  const item = state.ai.actionPlan.items.find((entry) => entry.id === id);
+  if (!item) {
+    return;
+  }
+  item.status = status;
+  renderApp();
+}
+
+function generateActionPlan() {
+  if (!state.results) {
+    state.ai.actionPlanStatus = "error";
+    state.ai.actionPlanError = "Upload a bulk sheet before generating actions.";
+    renderApp();
+    return;
+  }
+
+  state.ai.actionPlanStatus = "loading";
+  state.ai.actionPlanError = "";
+  state.ai.actionPlanAiStatus = "";
+  state.ai.actionPlanAiError = "";
+  renderApp();
+
+  try {
+    const plan = buildActionPlan();
+    state.ai.actionPlan = plan;
+    state.ai.actionPlanStatus = plan.items.length ? "ready" : "empty";
+    renderApp();
+    if (state.ai.apiKey && plan.items.length) {
+      enrichActionPlanWithAi(plan.items.slice(0, 3));
+    }
+  } catch (error) {
+    state.ai.actionPlanStatus = "error";
+    state.ai.actionPlanError = error?.message || "Action plan generation failed.";
+    renderApp();
+  }
+}
+
+function buildActionPlan() {
+  const thresholds = getActionThresholds();
+  const items = [
+    ...buildSearchTermActions(thresholds),
+    ...buildTargetActions(thresholds),
+  ];
+  const sorted = items.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+  const trimmed = sorted.slice(0, ACTION_PLAN_MAX_ITEMS);
+  const summary = trimmed.length
+    ? `Generated ${trimmed.length} prioritized actions from the latest upload.`
+    : "No actions met the current thresholds.";
+  return {
+    generatedAt: Date.now(),
+    summary,
+    items: trimmed,
+  };
+}
+
+function buildSearchTermActions(thresholds) {
+  const rows = getSearchTermRows();
+  if (!rows.length) {
+    return [];
+  }
+  const grouped = groupBy(rows, (row) => {
+    const term = String(row.customerSearchTerm || "").trim();
+    if (!term) {
+      return "";
+    }
+    return `${row.adType || "All"}::${term}`;
+  });
+  return Object.entries(grouped)
+    .filter(([key]) => key)
+    .map(([_key, items]) => {
+      const term = String(items[0].customerSearchTerm || "").trim();
+      const adType = items[0].adType || "All";
+      const summary = computeSummary(items);
+      const actionType =
+        summary.spend >= thresholds.spendNoSales && summary.sales === 0
+          ? "add_negative"
+          : null;
+      if (!actionType) {
+        return null;
+      }
+      const target = buildActionTarget({
+        section: "search-terms",
+        label: term,
+        adType,
+        actionType,
+      });
+      return buildActionItem({
+        idPrefix: "search",
+        label: term,
+        entityLabel: "Search Term",
+        type: actionType,
+        summary,
+        thresholds,
+        target,
+      });
+    })
+    .filter(Boolean);
+}
+
+function buildTargetActions(thresholds) {
+  const rows = getCampaignRows().filter((row) =>
+    ["keyword", "product targeting"].includes(row.entityNormalized)
+  );
+  if (!rows.length) {
+    return [];
+  }
+  const grouped = groupBy(rows, (row) => {
+    const sectionKey = getMatchSectionKey(row);
+    const label = getTargetLabelForRow(row);
+    if (!sectionKey || !label) {
+      return "";
+    }
+    return `${sectionKey}::${row.adType || "All"}::${label}`;
+  });
+
+  return Object.entries(grouped)
+    .filter(([key]) => key)
+    .map(([_key, items]) => {
+      const row = items[0];
+      const sectionKey = getMatchSectionKey(row);
+      const label = getTargetLabelForRow(row);
+      if (!sectionKey || !label) {
+        return null;
+      }
+      const summary = computeSummary(items);
+      const actionType = selectActionForSummary(summary, thresholds);
+      if (!actionType) {
+        return null;
+      }
+      const adType = row.adType || "All";
+      const target = buildActionTarget({
+        section: sectionKey,
+        label,
+        adType,
+        actionType,
+      });
+      const entityLabel = getSectionConfig(sectionKey).entityLabel || "Target";
+      return buildActionItem({
+        idPrefix: sectionKey,
+        label,
+        entityLabel,
+        type: actionType,
+        summary,
+        thresholds,
+        target,
+      });
+    })
+    .filter(Boolean);
+}
+
+function buildActionItem({
+  idPrefix,
+  label,
+  entityLabel,
+  type,
+  summary,
+  thresholds,
+  target,
+}) {
+  const priority = scoreAction(type, summary, thresholds);
+  const confidence = computeActionConfidence(type, summary, thresholds);
+  return {
+    id: `${idPrefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    title: buildActionTitle(type, label, entityLabel),
+    type,
+    priority,
+    confidence,
+    status: "proposed",
+    target,
+    metrics: {
+      spend: summary.spend,
+      sales: summary.sales,
+      acos: summary.acos,
+      roas: summary.roas,
+      cvr: summary.cvr,
+      clicks: summary.clicks,
+    },
+    evidence: buildActionEvidence(summary),
+    rationale: buildActionRationale(type, summary, thresholds),
+  };
+}
+
+function getActionThresholds() {
+  const totalSpend = state.accountTotals?.spend || 0;
+  const totalSales = state.accountTotals?.sales || 0;
+  return {
+    spendNoSales: Math.max(25, totalSpend * 0.005),
+    spendHighAcos: Math.max(50, totalSpend * 0.01),
+    acosTarget: 0.4,
+    roasTarget: 3,
+    salesHigh: Math.max(100, totalSales * 0.01),
+    clicksLowCvr: 80,
+    cvrTarget: 0.08,
+  };
+}
+
+function selectActionForSummary(summary, thresholds) {
+  if (summary.spend >= thresholds.spendNoSales && summary.sales === 0) {
+    return "pause";
+  }
+  if (
+    summary.spend >= thresholds.spendHighAcos &&
+    Number.isFinite(summary.acos) &&
+    summary.acos >= thresholds.acosTarget
+  ) {
+    return "reduce_bid";
+  }
+  if (
+    summary.sales >= thresholds.salesHigh &&
+    Number.isFinite(summary.roas) &&
+    summary.roas >= thresholds.roasTarget
+  ) {
+    return "scale";
+  }
+  if (
+    summary.clicks >= thresholds.clicksLowCvr &&
+    Number.isFinite(summary.cvr) &&
+    summary.cvr <= thresholds.cvrTarget
+  ) {
+    return "investigate";
+  }
+  return null;
+}
+
+function scoreAction(type, summary, thresholds) {
+  const spend = summary.spend || 0;
+  const sales = summary.sales || 0;
+  const clicks = summary.clicks || 0;
+  const acos = summary.acos || 0;
+  const roas = summary.roas || 0;
+  const cvr = summary.cvr || 0;
+  let score = 0;
+  if (type === "pause" || type === "add_negative") {
+    score = Math.log10(spend + 1) * 100;
+  } else if (type === "reduce_bid") {
+    score = (acos / thresholds.acosTarget) * Math.log10(spend + 1) * 60;
+  } else if (type === "scale") {
+    score = roas * Math.log10(sales + 1) * 40;
+  } else if (type === "investigate") {
+    score =
+      (1 - cvr / thresholds.cvrTarget) * Math.log10(clicks + 1) * 30;
+  }
+  return Number.isFinite(score) ? score : 0;
+}
+
+function computeActionConfidence(type, summary, thresholds) {
+  const clamp = (value) => Math.min(0.95, Math.max(0.4, value));
+  const ratio = (value, threshold) =>
+    threshold ? Math.min(1, value / threshold) : 0;
+  if (type === "pause" || type === "add_negative") {
+    return clamp(0.4 + 0.6 * ratio(summary.spend || 0, thresholds.spendNoSales));
+  }
+  if (type === "reduce_bid") {
+    return clamp(0.4 + 0.6 * ratio(summary.spend || 0, thresholds.spendHighAcos));
+  }
+  if (type === "scale") {
+    return clamp(0.4 + 0.6 * ratio(summary.sales || 0, thresholds.salesHigh));
+  }
+  if (type === "investigate") {
+    return clamp(
+      0.4 + 0.6 * ratio(summary.clicks || 0, thresholds.clicksLowCvr)
+    );
+  }
+  return 0.5;
+}
+
+function buildActionTitle(type, label, entityLabel) {
+  const safeLabel = label || "Item";
+  if (type === "pause") {
+    return `Pause ${entityLabel}: ${safeLabel}`;
+  }
+  if (type === "add_negative") {
+    return `Add negative: ${safeLabel}`;
+  }
+  if (type === "reduce_bid") {
+    return `Reduce bid: ${safeLabel}`;
+  }
+  if (type === "scale") {
+    return `Scale: ${safeLabel}`;
+  }
+  if (type === "investigate") {
+    return `Investigate: ${safeLabel}`;
+  }
+  return `Action: ${safeLabel}`;
+}
+
+function buildActionRationale(type, summary, thresholds) {
+  if (type === "pause" || type === "add_negative") {
+    return `Spend ${formatCurrency(
+      summary.spend
+    )} with no sales detected.`;
+  }
+  if (type === "reduce_bid") {
+    return `ACoS ${formatPercent(summary.acos)} exceeds target ${formatPercent(
+      thresholds.acosTarget
+    )}.`;
+  }
+  if (type === "scale") {
+    return `ROAS ${formatRoas(summary.roas)} on ${formatCurrency(
+      summary.sales
+    )} sales indicates strong efficiency.`;
+  }
+  if (type === "investigate") {
+    return `CVR ${formatPercent(summary.cvr)} below target ${formatPercent(
+      thresholds.cvrTarget
+    )} with ${formatNumber(summary.clicks)} clicks.`;
+  }
+  return "";
+}
+
+function buildActionEvidence(summary) {
+  const evidence = [];
+  if (Number.isFinite(summary.spend)) {
+    evidence.push(`Spend ${formatCurrency(summary.spend)}`);
+  }
+  if (Number.isFinite(summary.sales)) {
+    evidence.push(`Sales ${formatCurrency(summary.sales)}`);
+  }
+  if (Number.isFinite(summary.acos)) {
+    evidence.push(`ACoS ${formatPercent(summary.acos)}`);
+  }
+  if (Number.isFinite(summary.cvr)) {
+    evidence.push(`CVR ${formatPercent(summary.cvr)}`);
+  }
+  if (Number.isFinite(summary.clicks)) {
+    evidence.push(`${formatNumber(summary.clicks)} clicks`);
+  }
+  return evidence.slice(0, 3);
+}
+
+function buildActionTarget({ section, label, adType, actionType }) {
+  const target = {
+    section,
+    viewMode: "table",
+    searchQuery: label,
+  };
+  if (adType && adType !== "All") {
+    target.adTypeFilter = adType;
+  }
+  if (actionType === "pause" || actionType === "add_negative") {
+    target.noSalesFilter = "no-sales";
+  }
+  if (section === "search-terms") {
+    const term = String(label || "");
+    target.searchTermFilter = term.toUpperCase().includes("B0")
+      ? "asins"
+      : "terms";
+  }
+  return target;
+}
+
+function getMatchSectionKey(row) {
+  if (!row) {
+    return null;
+  }
+  if (row.entityNormalized === "keyword") {
+    return "match-keywords";
+  }
+  if (row.entityNormalized !== "product targeting") {
+    return null;
+  }
+  const matchType = String(row.matchType || "");
+  if (matchType === "ASINs") {
+    return "match-asins";
+  }
+  if (matchType === "ASINs Expanded") {
+    return "match-asins-expanded";
+  }
+  if (matchType === "Auto") {
+    return "match-auto";
+  }
+  if (matchType === "Category") {
+    return "match-categories";
+  }
+  if (matchType === "Related Keywords") {
+    return "match-related";
+  }
+  return null;
+}
+
+function getTargetLabelForRow(row) {
+  if (!row) {
+    return "";
+  }
+  return (
+    row.keywordText ||
+    row.asinTarget ||
+    row.productTargetingExpression ||
+    ""
+  );
+}
+
+function getCampaignRows() {
+  return state.datasets
+    .filter((set) => set.def.kind === "campaign")
+    .flatMap((set) => set.rows);
+}
+
+function getSearchTermRows() {
+  return state.datasets
+    .filter((set) => set.def.kind === "searchTerm")
+    .flatMap((set) => set.rows);
+}
+
+async function enrichActionPlanWithAi(items) {
+  state.ai.actionPlanAiStatus = "loading";
+  state.ai.actionPlanAiError = "";
+  renderApp();
+  try {
+    const payload = items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      metrics: item.metrics,
+      evidence: item.evidence,
+    }));
+    const instructions =
+      "You are an Amazon Ads audit analyst. For each action, write a single concise 'why now' sentence (max 20 words). Return JSON array of {id, explanation}.";
+    const responseText = await requestChatResponse({
+      apiKey: state.ai.apiKey,
+      model: state.ai.model,
+      instructions,
+      messages: [
+        {
+          role: "user",
+          content: `Actions:\n${JSON.stringify(payload)}`,
+        },
+      ],
+    });
+    const parsed = parseJsonArray(responseText);
+    if (!Array.isArray(parsed)) {
+      throw new Error("AI response missing JSON array.");
+    }
+    const map = new Map(
+      parsed
+        .filter((item) => item && item.id && item.explanation)
+        .map((item) => [item.id, String(item.explanation)])
+    );
+    if (state.ai.actionPlan?.items?.length) {
+      state.ai.actionPlan.items = state.ai.actionPlan.items.map((item) =>
+        map.has(item.id)
+          ? { ...item, rationale: map.get(item.id) }
+          : item
+      );
+    }
+    state.ai.actionPlanAiStatus = "ready";
+    renderApp();
+  } catch (error) {
+    state.ai.actionPlanAiStatus = "error";
+    state.ai.actionPlanAiError =
+      error?.message || "AI enrichment failed.";
+    renderApp();
+  }
+}
+
+function parseJsonArray(text) {
+  const raw = String(text || "");
+  const start = raw.indexOf("[");
+  const end = raw.lastIndexOf("]");
+  if (start === -1 || end === -1) {
+    return null;
+  }
+  const slice = raw.slice(start, end + 1);
+  try {
+    return JSON.parse(slice);
+  } catch (_error) {
+    return null;
+  }
+}
+
 function attachOverviewHandlers() {
   workspaceContent.querySelectorAll("[data-insight]").forEach((card) => {
     card.addEventListener("click", () => {
@@ -1661,6 +2304,45 @@ function attachOverviewHandlers() {
     });
   });
   attachAiRecommendationHandlers();
+  attachActionPlanHandlers(workspaceContent);
+}
+
+function attachActionPlanHandlers(container) {
+  const scope = container || document;
+  const generateButton = scope.querySelector("#ai-action-generate");
+  if (generateButton) {
+    generateButton.addEventListener("click", () => {
+      if (generateButton.disabled) {
+        return;
+      }
+      generateActionPlan();
+    });
+  }
+
+  scope.querySelectorAll("[data-action-jump]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.actionJump;
+      const item = state.ai.actionPlan?.items?.find((entry) => entry.id === id);
+      if (!item?.target) {
+        return;
+      }
+      applyRecommendationTarget(item.target);
+    });
+  });
+
+  scope.querySelectorAll("[data-action-done]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.actionDone;
+      updateActionStatus(id, "done");
+    });
+  });
+
+  scope.querySelectorAll("[data-action-dismiss]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.actionDismiss;
+      updateActionStatus(id, "dismissed");
+    });
+  });
 }
 
 function attachAiRecommendationHandlers() {
@@ -2963,6 +3645,14 @@ function resetAiSummaries(message) {
   state.ai.status = message || "";
   renderReport();
   updateAiControls();
+}
+
+function resetActionPlan(message) {
+  state.ai.actionPlan = null;
+  state.ai.actionPlanStatus = "";
+  state.ai.actionPlanError = message || "";
+  state.ai.actionPlanAiStatus = "";
+  state.ai.actionPlanAiError = "";
 }
 
 function updateAiControls() {
