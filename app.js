@@ -58,6 +58,7 @@ const state = {
     detailSortKey: "spend",
     detailSortDirection: "desc",
     searchTermFilter: "terms",
+    searchTermShowCampaignChips: false,
     negativeKeywordFilter: "keywords",
     showCampaignChips: true,
     noSalesFilter: "all",
@@ -403,7 +404,12 @@ if (negativeFilter) {
 
 if (campaignChipToggle) {
   campaignChipToggle.addEventListener("change", () => {
-    state.ui.showCampaignChips = campaignChipToggle.value !== "off";
+    const shouldShow = campaignChipToggle.value !== "off";
+    if (state.ui.activeSection === "search-terms") {
+      state.ui.searchTermShowCampaignChips = shouldShow;
+    } else {
+      state.ui.showCampaignChips = shouldShow;
+    }
     renderApp();
   });
 }
@@ -929,12 +935,20 @@ function updateWorkspaceHeader() {
   if (negativeFilter) {
     negativeFilter.value = state.ui.negativeKeywordFilter;
   }
-  const showCampaignChipToggle = sectionConfig.key.startsWith("match-");
+  const showCampaignChipToggle =
+    sectionConfig.key === "search-terms" ||
+    (sectionConfig.key.startsWith("match-") &&
+      (sectionConfig.allowViewToggle ? state.ui.viewMode : sectionConfig.defaultView) ===
+        "groups");
   if (campaignChipWrap) {
     campaignChipWrap.style.display = showCampaignChipToggle ? "flex" : "none";
   }
   if (campaignChipToggle) {
-    campaignChipToggle.value = state.ui.showCampaignChips ? "on" : "off";
+    const isSearchTerms = sectionConfig.key === "search-terms";
+    const isOn = isSearchTerms
+      ? state.ui.searchTermShowCampaignChips
+      : state.ui.showCampaignChips;
+    campaignChipToggle.value = isOn ? "on" : "off";
   }
   if (noSalesFilterWrap) {
     noSalesFilterWrap.style.display = sectionConfig.key === "overview" ? "none" : "flex";
@@ -1968,7 +1982,7 @@ function renderTable(rows) {
   const isSearchTerms = state.ui.activeSection === "search-terms";
   const isMatchTypes = state.ui.activeSection === "match-types";
   const showCopyIcon = state.ui.activeSection !== "match-types";
-  const columnCount = isSearchTerms ? 10 : 8;
+  const columnCount = 8 + (isSearchTerms ? 2 : 0) + (isMatchTypes ? 2 : 0);
   const body = visible
     .map((item) => {
       const selected = state.ui.selectedEntity?.id === item.id;
@@ -1988,6 +2002,11 @@ function renderTable(rows) {
         isSearchTerms && state.ui.searchTermFilter === "asins"
           ? String(item.label).toUpperCase()
           : item.label;
+      const campaignLabel = isSearchTerms
+        ? item.raw?.campaignName || item.raw?.campaignId || ""
+        : "";
+      const showCampaignChip =
+        isSearchTerms && state.ui.searchTermShowCampaignChips && campaignLabel;
       const copyValue = String(label || "");
       const copyButton = showCopyIcon
         ? `<button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
@@ -1997,13 +2016,22 @@ function renderTable(rows) {
             </svg>
           </button>`
         : "";
-      return `
-        <tr class="${selected ? "selected" : ""}" data-entity="${item.id}">
-          <td>
+      const nameCell = showCampaignChip
+        ? `<div class="name-stack">
             <span class="name-cell">
               ${escapeHtml(label)}
               ${copyButton}
             </span>
+            <span class="chip campaign-chip">${escapeHtml(campaignLabel)}</span>
+          </div>`
+        : `<span class="name-cell">
+            ${escapeHtml(label)}
+            ${copyButton}
+          </span>`;
+      return `
+        <tr class="${selected ? "selected" : ""}" data-entity="${item.id}">
+          <td>
+            ${nameCell}
           </td>
           <td>${escapeHtml(item.adType || "—")}</td>
           <td class="num">${formatCurrency(item.summary.spend)}</td>
@@ -2265,7 +2293,7 @@ function renderNegativeCards(rows) {
         <div class="card clickable ${selected ? "selected" : ""}" data-entity="${item.id}">
           <div class="row space-between">
             <strong>${escapeHtml(item.label)}</strong>
-            <span class="chip">${escapeHtml(item.adType || "—")}</span>
+            <span class="chip">${escapeHtml(item.adType || "???")}</span>
           </div>
           <div class="row">
             ${
@@ -2545,7 +2573,7 @@ function getSectionConfig(sectionKey) {
     "negative-keywords": {
       ...base,
       key: "negative-keywords",
-      title: "Negative Keywords",
+      title: "Negated Targets",
       entityLabel: "Negative",
       allowViewToggle: false,
       defaultView: "table",
