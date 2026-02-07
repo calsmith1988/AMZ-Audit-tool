@@ -1,0 +1,63 @@
+{
+  "thresholds": {
+    "spendNoSales": 25,
+    "spendHighAcos": 50,
+    "acosTarget": 0.4,
+    "roasTarget": 3,
+    "salesHigh": 100,
+    "clicksLowCvr": 80,
+    "cvrTarget": 0.08
+  },
+  "rules": [
+    {
+      "id": "search-spend-no-sales",
+      "enabled": true,
+      "appliesTo": "search_terms",
+      "condition": "spend_no_sales",
+      "action": "add_negative",
+      "weight": 1,
+      "title": "Add negative: {label}",
+      "rationale": "Spend {spend} with no sales. Add a negative to cut wasted spend."
+    },
+    {
+      "id": "targets-spend-no-sales",
+      "enabled": true,
+      "appliesTo": "targets",
+      "condition": "spend_no_sales",
+      "action": "pause",
+      "weight": 1,
+      "title": "Pause {entity}: {label}",
+      "rationale": "Spend {spend} with no sales detected."
+    },
+    {
+      "id": "targets-high-acos",
+      "enabled": true,
+      "appliesTo": "targets",
+      "condition": "high_acos",
+      "action": "reduce_bid",
+      "weight": 1,
+      "title": "Reduce bid: {label}",
+      "rationale": "ACoS {acos} exceeds target {acosTarget}."
+    },
+    {
+      "id": "targets-high-roas",
+      "enabled": true,
+      "appliesTo": "targets",
+      "condition": "high_roas",
+      "action": "scale",
+      "weight": 1,
+      "title": "Scale: {label}",
+      "rationale": "ROAS {roas} on {sales} sales indicates strong efficiency."
+    },
+    {
+      "id": "targets-low-cvr",
+      "enabled": true,
+      "appliesTo": "targets",
+      "condition": "low_cvr",
+      "action": "investigate",
+      "weight": 1,
+      "title": "Investigate: {label}",
+      "rationale": "CVR {cvr} below target {cvrTarget} with {clicks} clicks."
+    }
+  ]
+}

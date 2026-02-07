@@ -197,6 +197,42 @@ img {
   stroke-linejoin: round;
 }
 
+.nav-collapse-toggle {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.nav-collapse-toggle svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.app-body.nav-overview .nav-item[data-section="overview"] .nav-collapse-toggle,
+.nav-item.show-toggle .nav-collapse-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.app-body.nav-overview .nav-item[data-section="overview"] .nav-collapse-toggle:hover,
+.nav-item.show-toggle .nav-collapse-toggle:hover {
+  color: var(--text);
+}
+
+.app-body.nav-collapsed.nav-overview .nav-item[data-section="overview"] .nav-collapse-toggle svg,
+.app-body.nav-collapsed .nav-item.show-toggle .nav-collapse-toggle svg {
+  transform: rotate(180deg);
+}
+
 .nav-item:hover {
   background: var(--surface-2);
 }
@@ -284,6 +320,12 @@ img {
   padding: 10px 12px;
 }
 
+.app-body.nav-collapsed.nav-overview .nav-item[data-section="overview"] .nav-collapse-toggle,
+.app-body.nav-collapsed .nav-item.show-toggle .nav-collapse-toggle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .app-body.nav-collapsed .nav-sublist {
   display: none;
   margin-left: 0;
@@ -362,6 +404,47 @@ img {
   box-shadow: var(--shadow-2);
   z-index: 10;
   overflow: visible;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within {
+  width: 72px;
+  max-width: 72px;
+  box-shadow: none;
+  z-index: auto;
+  overflow: hidden;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover .nav-sublist,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within .nav-sublist {
+  display: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover .nav-sublist::before,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within .nav-sublist::before {
+  display: none;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover .nav-item.nav-sub,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within .nav-item.nav-sub {
+  padding-left: 12px;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover .nav-item.nav-sub::before,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within .nav-item.nav-sub::before {
+  display: none;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover .nav-item.nav-sub .nav-icon,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within .nav-item.nav-sub .nav-icon {
+  display: inline-flex;
+}
+
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:hover .nav-label,
+.app-body.nav-collapsed .sidebar.nav-hover-disabled:focus-within .nav-label {
+  display: none;
 }
 
 .workspace {

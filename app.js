@@ -34,11 +34,14 @@ const state = {
     recommendations: [],
     recommendationRules: null,
     recommendationRulesStatus: "",
+    actionRules: null,
+    actionRulesStatus: "",
     actionPlan: null,
     actionPlanStatus: "",
     actionPlanError: "",
     actionPlanAiStatus: "",
     actionPlanAiError: "",
+    actionPlanAiSessionId: "",
     chat: {
       messages: [],
       isBusy: false,
@@ -59,6 +62,7 @@ const state = {
     inspectorPinned: false,
     inspectorOpen: true,
     inspectorDismissed: false,
+    navCollapsedManual: false,
     tableLimit: 20,
     inspectorDetailLimit: 25,
     detailSortKey: "spend",
@@ -113,6 +117,7 @@ const campaignChipWrap = document.getElementById("campaign-chip-wrap");
 const noSalesFilter = document.getElementById("no-sales-filter");
 const noSalesFilterWrap = document.getElementById("no-sales-filter-wrap");
 
+const sidebar = document.querySelector(".sidebar");
 const inspector = document.getElementById("inspector");
 const inspectorTitle = document.getElementById("inspector-title");
 const inspectorType = document.getElementById("inspector-type");
@@ -153,7 +158,7 @@ function setCreateLoading(isLoading) {
   uploadCreate.disabled = isLoading;
   uploadCreate.classList.toggle("is-loading", isLoading);
   uploadCreate.innerHTML = isLoading
-    ? `<span class="spinner" aria-hidden="true"></span>Creating...`
+    ? `<span class="spinner" aria-hidden="true"></span>Creating & building action plan...`
     : "Create session";
 }
 
@@ -202,10 +207,11 @@ function setActiveSession(sessionId) {
   state.brandAliases = session.brandAliases;
   state.accountTotals = session.accountTotals;
   state.health = session.health;
-  resetActionPlan("Session changed. Generate a new action plan.");
+  resetActionPlan("Session changed. Regenerating action plan...");
   updateSessionSelect();
   renderMappingPanel();
   renderApp();
+  generateActionPlan({ enrich: true });
 }
 
 function createSessionFromState(meta) {
@@ -303,7 +309,15 @@ if (sessionSelect) {
 }
 
 navItems.forEach((item) => {
-  item.addEventListener("click", () => {
+  item.addEventListener("click", (event) => {
+    const toggle = event.target.closest("[data-nav-toggle]");
+    if (toggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      state.ui.navCollapsedManual = !state.ui.navCollapsedManual;
+      syncNav();
+      return;
+    }
     state.ui.activeSection = item.dataset.section;
     state.ui.selectedEntity = null;
     state.ui.selectedBucket = null;
@@ -745,7 +759,7 @@ function recompute() {
       .filter((row) => String(row.entityNormalized) === "campaign")
   );
   resetAiSummaries("Data updated. Generate summaries to refresh AI insights.");
-  resetActionPlan("Data updated. Generate a new action plan.");
+  generateActionPlan({ enrich: true });
   renderApp();
 }
 
@@ -760,12 +774,30 @@ function syncNav() {
   if (matchParent) {
     matchParent.classList.toggle("nav-parent-active", isMatchChild);
   }
+  const overviewItem = document.querySelector('[data-section="overview"]');
+  if (overviewItem) {
+    overviewItem.classList.toggle(
+      "show-toggle",
+      state.ui.activeSection === "overview"
+    );
+  }
   if (appBody) {
+    const shouldCollapse =
+      state.ui.activeSection === "overview"
+        ? state.ui.navCollapsedManual
+        : true;
+    appBody.classList.toggle("nav-collapsed", shouldCollapse);
     appBody.classList.toggle(
-      "nav-collapsed",
-      state.ui.activeSection !== "overview"
+      "nav-overview",
+      state.ui.activeSection === "overview"
     );
     appBody.classList.add("inspector-overlay");
+  }
+  if (sidebar) {
+    sidebar.classList.toggle(
+      "nav-hover-disabled",
+      state.ui.activeSection === "overview" && state.ui.navCollapsedManual
+    );
   }
 }
 
@@ -1577,9 +1609,6 @@ function renderActionHub() {
   const aiStatus = state.ai.actionPlanAiStatus;
   const aiError = state.ai.actionPlanAiError;
   const items = plan?.items || [];
-  const isBusy = status === "loading" || aiStatus === "loading";
-  const buttonLabel = plan ? "Regenerate Action Plan" : "Generate Action Plan";
-  const canGenerate = hasData && !isBusy;
   const generatedAt = plan?.generatedAt
     ? new Date(plan.generatedAt).toLocaleString("en-GB", {
         day: "2-digit",
@@ -1610,7 +1639,7 @@ function renderActionHub() {
     if (plan && generatedAt) {
       return `Generated ${generatedAt}.`;
     }
-    return "Generate a prioritized action queue from the current upload.";
+    return "Action plan updates automatically after each upload.";
   })();
 
   const actionCards = items.length
@@ -1625,13 +1654,10 @@ function renderActionHub() {
     <div class="card ai-action-hub ai-actions">
       <div class="row space-between">
         <strong>Action Queue</strong>
-        <span class="chip">Action Plan</span>
+        <span class="chip">Auto</span>
       </div>
-      <div class="row space-between ai-actions-header">
+      <div class="ai-actions-header">
         <div class="muted">${escapeHtml(statusLine)}</div>
-        <button id="ai-action-generate" class="btn primary" ${
-          canGenerate ? "" : "disabled"
-        }>${buttonLabel}</button>
       </div>
       ${plan?.summary ? `<p class="muted">${escapeHtml(plan.summary)}</p>` : ""}
       <div class="ai-action-list">
@@ -1829,12 +1855,17 @@ function updateActionStatus(id, status) {
   renderApp();
 }
 
-function generateActionPlan() {
+async function generateActionPlan(options = {}) {
+  const { enrich = true, waitForAi = false } = options;
   if (!state.results) {
     state.ai.actionPlanStatus = "error";
     state.ai.actionPlanError = "Upload a bulk sheet before generating actions.";
     renderApp();
     return;
+  }
+
+  if (state.ai.actionRules === null) {
+    await loadActionRules();
   }
 
   state.ai.actionPlanStatus = "loading";
@@ -1848,8 +1879,16 @@ function generateActionPlan() {
     state.ai.actionPlan = plan;
     state.ai.actionPlanStatus = plan.items.length ? "ready" : "empty";
     renderApp();
-    if (state.ai.apiKey && plan.items.length) {
-      enrichActionPlanWithAi(plan.items.slice(0, 3));
+    if (enrich && state.ai.apiKey && plan.items.length) {
+      const shouldEnrich =
+        !state.ai.actionPlanAiSessionId ||
+        state.ai.actionPlanAiSessionId !== state.activeSessionId;
+      if (shouldEnrich) {
+        const enrichPromise = enrichActionPlanWithAi(plan.items.slice(0, 3));
+        if (waitForAi) {
+          await enrichPromise;
+        }
+      }
     }
   } catch (error) {
     state.ai.actionPlanStatus = "error";
@@ -1858,11 +1897,103 @@ function generateActionPlan() {
   }
 }
 
+function getDefaultActionRules() {
+  return {
+    thresholds: {
+      spendNoSales: 25,
+      spendHighAcos: 50,
+      acosTarget: 0.4,
+      roasTarget: 3,
+      salesHigh: 100,
+      clicksLowCvr: 80,
+      cvrTarget: 0.08,
+    },
+    rules: [
+      {
+        id: "search-spend-no-sales",
+        enabled: true,
+        appliesTo: "search_terms",
+        condition: "spend_no_sales",
+        action: "add_negative",
+        weight: 1,
+      },
+      {
+        id: "targets-spend-no-sales",
+        enabled: true,
+        appliesTo: "targets",
+        condition: "spend_no_sales",
+        action: "pause",
+        weight: 1,
+      },
+      {
+        id: "targets-high-acos",
+        enabled: true,
+        appliesTo: "targets",
+        condition: "high_acos",
+        action: "reduce_bid",
+        weight: 1,
+      },
+      {
+        id: "targets-high-roas",
+        enabled: true,
+        appliesTo: "targets",
+        condition: "high_roas",
+        action: "scale",
+        weight: 1,
+      },
+      {
+        id: "targets-low-cvr",
+        enabled: true,
+        appliesTo: "targets",
+        condition: "low_cvr",
+        action: "investigate",
+        weight: 1,
+      },
+    ],
+  };
+}
+
+function mergeActionRules(source) {
+  const defaults = getDefaultActionRules();
+  const thresholds = {
+    ...defaults.thresholds,
+    ...(source?.thresholds || {}),
+  };
+  const rules = Array.isArray(source?.rules) && source.rules.length
+    ? source.rules
+    : defaults.rules;
+  return { thresholds, rules };
+}
+
+async function loadActionRules() {
+  if (state.ai.actionRules !== null) {
+    return;
+  }
+  state.ai.actionRulesStatus = "loading";
+  try {
+    const response = await fetch("action_rules.json", { cache: "no-store" });
+    if (!response.ok) {
+      state.ai.actionRulesStatus = `error (${response.status})`;
+      state.ai.actionRules = getDefaultActionRules();
+      console.warn("Failed to load action_rules.json", response.status);
+      return;
+    }
+    const data = await response.json();
+    state.ai.actionRules = mergeActionRules(data);
+    state.ai.actionRulesStatus = "loaded";
+  } catch (error) {
+    state.ai.actionRulesStatus = "error";
+    state.ai.actionRules = getDefaultActionRules();
+    console.warn("Failed to parse action_rules.json", error);
+  }
+}
+
 function buildActionPlan() {
   const thresholds = getActionThresholds();
+  const rules = getActionRulesList();
   const items = [
-    ...buildSearchTermActions(thresholds),
-    ...buildTargetActions(thresholds),
+    ...buildSearchTermActions(thresholds, rules),
+    ...buildTargetActions(thresholds, rules),
   ];
   const sorted = items.sort((a, b) => (b.priority || 0) - (a.priority || 0));
   const trimmed = sorted.slice(0, ACTION_PLAN_MAX_ITEMS);
@@ -1876,7 +2007,7 @@ function buildActionPlan() {
   };
 }
 
-function buildSearchTermActions(thresholds) {
+function buildSearchTermActions(thresholds, rules) {
   const rows = getSearchTermRows();
   if (!rows.length) {
     return [];
@@ -1894,13 +2025,16 @@ function buildSearchTermActions(thresholds) {
       const term = String(items[0].customerSearchTerm || "").trim();
       const adType = items[0].adType || "All";
       const summary = computeSummary(items);
-      const actionType =
-        summary.spend >= thresholds.spendNoSales && summary.sales === 0
-          ? "add_negative"
-          : null;
-      if (!actionType) {
+      const selectedRule = selectActionRule(
+        summary,
+        thresholds,
+        rules,
+        "search_terms"
+      );
+      if (!selectedRule) {
         return null;
       }
+      const actionType = selectedRule.action;
       const target = buildActionTarget({
         section: "search-terms",
         label: term,
@@ -1915,12 +2049,13 @@ function buildSearchTermActions(thresholds) {
         summary,
         thresholds,
         target,
+        rule: selectedRule,
       });
     })
     .filter(Boolean);
 }
 
-function buildTargetActions(thresholds) {
+function buildTargetActions(thresholds, rules) {
   const rows = getCampaignRows().filter((row) =>
     ["keyword", "product targeting"].includes(row.entityNormalized)
   );
@@ -1946,10 +2081,16 @@ function buildTargetActions(thresholds) {
         return null;
       }
       const summary = computeSummary(items);
-      const actionType = selectActionForSummary(summary, thresholds);
-      if (!actionType) {
+      const selectedRule = selectActionRule(
+        summary,
+        thresholds,
+        rules,
+        "targets"
+      );
+      if (!selectedRule) {
         return null;
       }
+      const actionType = selectedRule.action;
       const adType = row.adType || "All";
       const target = buildActionTarget({
         section: sectionKey,
@@ -1966,6 +2107,7 @@ function buildTargetActions(thresholds) {
         summary,
         thresholds,
         target,
+        rule: selectedRule,
       });
     })
     .filter(Boolean);
@@ -1979,12 +2121,22 @@ function buildActionItem({
   summary,
   thresholds,
   target,
+  rule,
 }) {
-  const priority = scoreAction(type, summary, thresholds);
+  const priority = Number.isFinite(rule?.computedScore)
+    ? rule.computedScore
+    : scoreAction(type, summary, thresholds);
   const confidence = computeActionConfidence(type, summary, thresholds);
+  const templateData = buildActionTemplateData(label, entityLabel, summary, thresholds);
+  const title = rule?.title
+    ? applyRecommendationTemplate(rule.title, templateData)
+    : buildActionTitle(type, label, entityLabel);
+  const rationale = rule?.rationale
+    ? applyRecommendationTemplate(rule.rationale, templateData)
+    : buildActionRationale(type, summary, thresholds);
   return {
     id: `${idPrefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-    title: buildActionTitle(type, label, entityLabel),
+    title,
     type,
     priority,
     confidence,
@@ -1999,50 +2151,92 @@ function buildActionItem({
       clicks: summary.clicks,
     },
     evidence: buildActionEvidence(summary),
-    rationale: buildActionRationale(type, summary, thresholds),
+    rationale,
+    ruleId: rule?.id || "",
   };
 }
 
 function getActionThresholds() {
   const totalSpend = state.accountTotals?.spend || 0;
   const totalSales = state.accountTotals?.sales || 0;
+  const base = getDefaultActionRules().thresholds;
+  const overrides = state.ai.actionRules?.thresholds || {};
   return {
-    spendNoSales: Math.max(25, totalSpend * 0.005),
-    spendHighAcos: Math.max(50, totalSpend * 0.01),
-    acosTarget: 0.4,
-    roasTarget: 3,
-    salesHigh: Math.max(100, totalSales * 0.01),
-    clicksLowCvr: 80,
-    cvrTarget: 0.08,
+    ...base,
+    ...overrides,
+    spendNoSales:
+      overrides.spendNoSales ?? Math.max(base.spendNoSales, totalSpend * 0.005),
+    spendHighAcos:
+      overrides.spendHighAcos ?? Math.max(base.spendHighAcos, totalSpend * 0.01),
+    salesHigh:
+      overrides.salesHigh ?? Math.max(base.salesHigh, totalSales * 0.01),
   };
 }
 
-function selectActionForSummary(summary, thresholds) {
-  if (summary.spend >= thresholds.spendNoSales && summary.sales === 0) {
-    return "pause";
+function getActionRulesList() {
+  const rules =
+    Array.isArray(state.ai.actionRules?.rules) && state.ai.actionRules.rules.length
+      ? state.ai.actionRules.rules
+      : getDefaultActionRules().rules;
+  return rules.filter((rule) => rule && rule.enabled !== false);
+}
+
+function selectActionRule(summary, thresholds, rules, appliesTo) {
+  if (!summary || !Array.isArray(rules) || !rules.length) {
+    return null;
   }
-  if (
-    summary.spend >= thresholds.spendHighAcos &&
-    Number.isFinite(summary.acos) &&
-    summary.acos >= thresholds.acosTarget
-  ) {
-    return "reduce_bid";
+  const candidates = rules.filter(
+    (rule) =>
+      rule &&
+      rule.enabled !== false &&
+      String(rule.appliesTo || "").toLowerCase() === String(appliesTo).toLowerCase() &&
+      rule.action
+  );
+  let best = null;
+  candidates.forEach((rule) => {
+    if (!matchesActionCondition(rule.condition, summary, thresholds)) {
+      return;
+    }
+    const weight = Number.isFinite(rule.weight) ? rule.weight : 1;
+    const baseScore = scoreAction(rule.action, summary, thresholds);
+    const score = baseScore * weight;
+    if (!best || score > best.score) {
+      best = { rule, score };
+    }
+  });
+  if (!best) {
+    return null;
   }
-  if (
-    summary.sales >= thresholds.salesHigh &&
-    Number.isFinite(summary.roas) &&
-    summary.roas >= thresholds.roasTarget
-  ) {
-    return "scale";
+  return { ...best.rule, computedScore: best.score };
+}
+
+function matchesActionCondition(condition, summary, thresholds) {
+  const key = String(condition || "").toLowerCase();
+  if (key === "spend_no_sales") {
+    return summary.spend >= thresholds.spendNoSales && summary.sales === 0;
   }
-  if (
-    summary.clicks >= thresholds.clicksLowCvr &&
-    Number.isFinite(summary.cvr) &&
-    summary.cvr <= thresholds.cvrTarget
-  ) {
-    return "investigate";
+  if (key === "high_acos") {
+    return (
+      summary.spend >= thresholds.spendHighAcos &&
+      Number.isFinite(summary.acos) &&
+      summary.acos >= thresholds.acosTarget
+    );
   }
-  return null;
+  if (key === "high_roas") {
+    return (
+      summary.sales >= thresholds.salesHigh &&
+      Number.isFinite(summary.roas) &&
+      summary.roas >= thresholds.roasTarget
+    );
+  }
+  if (key === "low_cvr") {
+    return (
+      summary.clicks >= thresholds.clicksLowCvr &&
+      Number.isFinite(summary.cvr) &&
+      summary.cvr <= thresholds.cvrTarget
+    );
+  }
+  return false;
 }
 
 function scoreAction(type, summary, thresholds) {
@@ -2129,6 +2323,22 @@ function buildActionRationale(type, summary, thresholds) {
     )} with ${formatNumber(summary.clicks)} clicks.`;
   }
   return "";
+}
+
+function buildActionTemplateData(label, entityLabel, summary, thresholds) {
+  return {
+    label: label || "",
+    entity: entityLabel || "",
+    spend: formatCurrency(summary.spend),
+    sales: formatCurrency(summary.sales),
+    acos: formatPercent(summary.acos),
+    roas: formatRoas(summary.roas),
+    cvr: formatPercent(summary.cvr),
+    clicks: formatNumber(summary.clicks),
+    acosTarget: formatPercent(thresholds.acosTarget),
+    roasTarget: formatRoas(thresholds.roasTarget),
+    cvrTarget: formatPercent(thresholds.cvrTarget),
+  };
 }
 
 function buildActionEvidence(summary) {
@@ -2266,6 +2476,7 @@ async function enrichActionPlanWithAi(items) {
           : item
       );
     }
+    state.ai.actionPlanAiSessionId = state.activeSessionId || "";
     state.ai.actionPlanAiStatus = "ready";
     renderApp();
   } catch (error) {
@@ -2309,15 +2520,6 @@ function attachOverviewHandlers() {
 
 function attachActionPlanHandlers(container) {
   const scope = container || document;
-  const generateButton = scope.querySelector("#ai-action-generate");
-  if (generateButton) {
-    generateButton.addEventListener("click", () => {
-      if (generateButton.disabled) {
-        return;
-      }
-      generateActionPlan();
-    });
-  }
 
   scope.querySelectorAll("[data-action-jump]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -3653,6 +3855,7 @@ function resetActionPlan(message) {
   state.ai.actionPlanError = message || "";
   state.ai.actionPlanAiStatus = "";
   state.ai.actionPlanAiError = "";
+  state.ai.actionPlanAiSessionId = "";
 }
 
 function updateAiControls() {
@@ -4112,4 +4315,5 @@ function indexBucketSummaries(items) {
 updateAiControls();
 renderReport();
 loadRecommendationRules();
+loadActionRules();
 renderApp();
