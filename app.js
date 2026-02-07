@@ -301,12 +301,8 @@ navItems.forEach((item) => {
     state.ui.selectedEntity = null;
     state.ui.selectedBucket = null;
     state.ui.searchQuery = "";
-    if (!state.ui.inspectorPinned) {
-      if (state.ui.activeSection === "overview") {
-        state.ui.inspectorOpen = !state.ui.inspectorDismissed;
-      } else {
-        state.ui.inspectorOpen = false;
-      }
+    if (!state.ui.inspectorPinned && state.ui.activeSection !== "overview") {
+      state.ui.inspectorOpen = false;
     }
     state.ui.viewMode = getSectionConfig(state.ui.activeSection).defaultView;
     syncNav();
@@ -749,6 +745,13 @@ function syncNav() {
   navItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.section === state.ui.activeSection);
   });
+  const matchParent = document.querySelector('[data-section="match-types"]');
+  const isMatchChild =
+    state.ui.activeSection?.startsWith("match-") &&
+    state.ui.activeSection !== "match-types";
+  if (matchParent) {
+    matchParent.classList.toggle("nav-parent-active", isMatchChild);
+  }
   if (appBody) {
     appBody.classList.toggle(
       "nav-collapsed",

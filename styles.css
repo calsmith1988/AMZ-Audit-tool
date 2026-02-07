@@ -211,15 +211,65 @@ img {
   color: var(--text);
 }
 
+.app-body.nav-collapsed .sidebar:not(:hover):not(:focus-within) .nav-item.nav-parent-active {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  font-weight: 600;
+}
+
+.app-body.nav-collapsed .sidebar:not(:hover):not(:focus-within) .nav-item.nav-parent-active .nav-icon {
+  color: var(--text);
+}
+
 .nav-sublist {
   display: grid;
   gap: 4px;
   margin-left: var(--sp-2);
+  padding-left: 14px;
+  position: relative;
 }
 
 .nav-item.nav-sub {
   font-size: 11px;
-  padding-left: 14px;
+  padding-left: 22px;
+  position: relative;
+}
+
+.nav-sublist::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: var(--surface-3);
+  border-radius: 999px;
+}
+
+.nav-item.nav-sub .nav-icon {
+  display: none;
+}
+
+.nav-item.nav-sub::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 70%;
+  background: transparent;
+  border-radius: 999px;
+}
+
+.nav-item.nav-sub.active {
+  border-left: none;
+}
+
+.nav-item.nav-sub.active::before {
+  left: 7px;
+  width: 3px;
+  background: var(--accent);
 }
 
 .app-body.nav-collapsed .sidebar {
@@ -235,7 +285,25 @@ img {
 }
 
 .app-body.nav-collapsed .nav-sublist {
+  display: none;
   margin-left: 0;
+  padding-left: 0;
+}
+
+.app-body.nav-collapsed .nav-sublist::before {
+  display: none;
+}
+
+.app-body.nav-collapsed .nav-item.nav-sub {
+  padding-left: 12px;
+}
+
+.app-body.nav-collapsed .nav-item.nav-sub::before {
+  display: none;
+}
+
+.app-body.nav-collapsed .nav-item.nav-sub .nav-icon {
+  display: inline-flex;
 }
 
 .app-body.nav-collapsed .nav-label {
@@ -250,17 +318,50 @@ img {
   overflow: visible;
 }
 
-.app-body.nav-collapsed .sidebar:hover .nav-item {
+.app-body.nav-collapsed .sidebar:hover .nav-item,
+.app-body.nav-collapsed .sidebar:focus-within .nav-item {
   justify-content: flex-start;
   padding: 10px 12px;
 }
 
-.app-body.nav-collapsed .sidebar:hover .nav-sublist {
+.app-body.nav-collapsed .sidebar:hover .nav-sublist,
+.app-body.nav-collapsed .sidebar:focus-within .nav-sublist {
+  display: grid;
   margin-left: var(--sp-2);
+  padding-left: 14px;
 }
 
-.app-body.nav-collapsed .sidebar:hover .nav-label {
+.app-body.nav-collapsed .sidebar:hover .nav-sublist::before,
+.app-body.nav-collapsed .sidebar:focus-within .nav-sublist::before {
+  display: block;
+}
+
+.app-body.nav-collapsed .sidebar:hover .nav-item.nav-sub,
+.app-body.nav-collapsed .sidebar:focus-within .nav-item.nav-sub {
+  padding-left: 22px;
+}
+
+.app-body.nav-collapsed .sidebar:hover .nav-item.nav-sub::before,
+.app-body.nav-collapsed .sidebar:focus-within .nav-item.nav-sub::before {
+  display: block;
+}
+
+.app-body.nav-collapsed .sidebar:hover .nav-item.nav-sub .nav-icon,
+.app-body.nav-collapsed .sidebar:focus-within .nav-item.nav-sub .nav-icon {
+  display: none;
+}
+
+.app-body.nav-collapsed .sidebar:hover .nav-label,
+.app-body.nav-collapsed .sidebar:focus-within .nav-label {
   display: inline;
+}
+
+.app-body.nav-collapsed .sidebar:focus-within {
+  width: 240px;
+  max-width: 240px;
+  box-shadow: var(--shadow-2);
+  z-index: 10;
+  overflow: visible;
 }
 
 .workspace {
