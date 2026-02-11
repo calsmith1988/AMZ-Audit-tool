@@ -132,6 +132,16 @@
                 <span class="nav-label">Related KWs</span>
               </button>
             </div>
+            <button class="nav-item" data-section="placements">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="8" />
+                  <path d="M12 7v10" />
+                  <path d="M7 12h10" />
+                </svg>
+              </span>
+              <span class="nav-label">Placements</span>
+            </button>
             <button class="nav-item" data-section="negative-keywords">
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -150,29 +160,6 @@
               </span>
               <span class="nav-label">Search Terms</span>
             </button>
-            <button class="nav-item" data-section="bidding-strategies">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <path d="M5 6h14" />
-                  <path d="M5 12h14" />
-                  <path d="M5 18h14" />
-                  <circle cx="9" cy="6" r="2" />
-                  <circle cx="15" cy="12" r="2" />
-                  <circle cx="11" cy="18" r="2" />
-                </svg>
-              </span>
-              <span class="nav-label">Campaign Bidding Strategies</span>
-            </button>
-            <button class="nav-item" data-section="placements">
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="8" />
-                  <path d="M12 7v10" />
-                  <path d="M7 12h10" />
-                </svg>
-              </span>
-              <span class="nav-label">Placements</span>
-            </button>
           </nav>
         </aside>
 
@@ -184,6 +171,7 @@
               <div>
                 <div class="breadcrumb muted" id="workspace-breadcrumb"></div>
                 <h2 id="workspace-title">Overview</h2>
+                <div class="muted workspace-subtitle" id="workspace-subtitle"></div>
               </div>
               <div class="workspace-controls">
                 <input
@@ -210,7 +198,7 @@
                   <button class="view-btn active" data-view="groups">Grouped</button>
                   <button class="view-btn" data-view="table">All</button>
                 </div>
-                <div class="filter-group">
+                <div class="filter-group" id="adtype-filter-wrap">
                   <label class="muted" for="adtype-filter">Ad type</label>
                   <select id="adtype-filter">
                     <option value="All">All</option>
@@ -225,6 +213,20 @@
                     <option value="all">All</option>
                     <option value="no-sales">Spend, no sales</option>
                   </select>
+                </div>
+                <div class="filter-group" id="adtype-chips-wrap">
+                  <label class="muted">Ad type</label>
+                  <div id="adtype-chips" class="adtype-chips" aria-label="Quick ad type filter">
+                    <button class="adtype-chip" type="button" data-adtype="SP" aria-pressed="false">
+                      SP
+                    </button>
+                    <button class="adtype-chip" type="button" data-adtype="SB" aria-pressed="false">
+                      SB
+                    </button>
+                    <button class="adtype-chip" type="button" data-adtype="SD" aria-pressed="false">
+                      SD
+                    </button>
+                  </div>
                 </div>
                 <div class="filter-group" id="searchterm-filter-wrap">
                   <label class="muted" for="searchterm-filter">Filter</label>

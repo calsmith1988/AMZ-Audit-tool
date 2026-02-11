@@ -23,6 +23,7 @@ const state = {
   results: null,
   datasets: [],
   brandAliases: [],
+  currencyCode: "GBP",
   accountTotals: null,
   health: [],
   ai: {
@@ -98,13 +99,18 @@ const homeView = document.getElementById("home-view");
 const sessionView = document.getElementById("session-view");
 const workspaceContent = document.getElementById("workspace-content");
 const workspaceTitle = document.getElementById("workspace-title");
+const workspaceSubtitle = document.getElementById("workspace-subtitle");
 const workspaceBreadcrumb = document.getElementById("workspace-breadcrumb");
 const workspaceControls = document.querySelector(".workspace-controls");
 const searchInput = document.getElementById("search-input");
 const sortSelect = document.getElementById("sort-select");
 const viewButtons = document.querySelectorAll("[data-view]");
 const viewToggle = document.querySelector(".view-toggle");
+const adTypeFilterWrap = document.getElementById("adtype-filter-wrap");
 const adTypeFilter = document.getElementById("adtype-filter");
+const adTypeChipsWrap = document.getElementById("adtype-chips-wrap");
+const adTypeChips = document.getElementById("adtype-chips");
+const adTypeChipButtons = adTypeChips?.querySelectorAll("[data-adtype]") || [];
 const groupedByWrap = document.getElementById("grouped-by-wrap");
 const groupedBySelect = document.getElementById("grouped-by");
 const searchTermFilter = document.getElementById("searchterm-filter");
@@ -205,6 +211,7 @@ function setActiveSession(sessionId) {
   state.results = session.results;
   state.datasets = session.datasets;
   state.brandAliases = session.brandAliases;
+  state.currencyCode = session.currencyCode || "GBP";
   state.accountTotals = session.accountTotals;
   state.health = session.health;
   resetActionPlan("Session changed. Regenerating action plan...");
@@ -231,6 +238,7 @@ function createSessionFromState(meta) {
     results: state.results,
     datasets: state.datasets,
     brandAliases: state.brandAliases,
+    currencyCode: state.currencyCode,
     accountTotals: state.accountTotals,
     health: state.health,
   };
@@ -365,6 +373,20 @@ if (adTypeFilter) {
     renderApp();
   });
 }
+
+adTypeChipButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    const adType = button.dataset.adtype;
+    if (!adType) {
+      return;
+    }
+    state.ui.adTypeFilter = state.ui.adTypeFilter === adType ? "All" : adType;
+    if (adTypeFilter) {
+      adTypeFilter.value = state.ui.adTypeFilter;
+    }
+    renderApp();
+  });
+});
 
 if (groupedBySelect) {
   groupedBySelect.addEventListener("change", () => {
@@ -615,11 +637,14 @@ async function loadWorkbook(file) {
       const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
       state.sheetData[sheetName] = { columns, rows };
     });
-
     if (fileMeta) {
       fileMeta.textContent = `${file.name} • ${workbook.SheetNames.length} sheets`;
     }
     autoMapAllSheets();
+    state.currencyCode = detectCurrencyCodeFromSheetData(
+      state.sheetData,
+      state.mappingSelections
+    );
     renderMappingPanel();
   } catch (error) {
     if (fileMeta) {
@@ -631,7 +656,18 @@ async function loadWorkbook(file) {
 
 function autoMapAllSheets() {
   Object.entries(state.sheetData).forEach(([sheetName, sheet]) => {
-    state.mappingSelections[sheetName] = buildAutoMapping(sheet.columns);
+    const nextMapping = buildAutoMapping(sheet.columns);
+    if (isPortfolioSheetName(sheetName)) {
+      nextMapping.currencyCode =
+        findMatchingColumnName(sheet.columns, [
+          "Budget currency code",
+          "Currency code",
+          "Currency",
+          "Account currency",
+          "Portfolio currency code",
+        ]) || "";
+    }
+    state.mappingSelections[sheetName] = nextMapping;
   });
 }
 
@@ -657,11 +693,10 @@ function renderMappingPanel() {
     ([name]) => !supportedNames.has(name)
   );
 
-  if (!visibleEntries.length) {
-    mappingPanel.innerHTML =
-      "<div class=\"muted\">No supported sheets detected for mapping.</div>";
-    return;
-  }
+  const portfolioSheetName = findPortfolioSheetName(state.sheetData);
+  const portfolioSheet = portfolioSheetName
+    ? state.sheetData[portfolioSheetName]
+    : null;
 
   if (hiddenEntries.length) {
     const note = document.createElement("div");
@@ -672,52 +707,109 @@ function renderMappingPanel() {
     mappingPanel.appendChild(note);
   }
 
-  visibleEntries.forEach(([sheetName, sheet]) => {
+  if (visibleEntries.length) {
+    visibleEntries.forEach(([sheetName, sheet]) => {
+      const section = document.createElement("div");
+      section.className = "mapping-sheet";
+
+      const title = document.createElement("h3");
+      title.textContent = sheetName;
+      section.appendChild(title);
+
+      const grid = document.createElement("div");
+      grid.className = "mapping-grid";
+
+      FIELD_DEFS.forEach((field) => {
+        const label = document.createElement("label");
+        label.textContent = field.label;
+
+        const select = document.createElement("select");
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "—";
+        select.appendChild(blankOption);
+
+        sheet.columns.forEach((column) => {
+          const option = document.createElement("option");
+          option.value = column;
+          option.textContent = column;
+          select.appendChild(option);
+        });
+
+        const selection =
+          (state.mappingSelections[sheetName] || {})[field.key] || "";
+        select.value = selection;
+
+        select.addEventListener("change", () => {
+          state.mappingSelections[sheetName] =
+            state.mappingSelections[sheetName] || {};
+          state.mappingSelections[sheetName][field.key] = select.value;
+          recompute();
+        });
+
+        grid.appendChild(label);
+        grid.appendChild(select);
+      });
+
+      section.appendChild(grid);
+      mappingPanel.appendChild(section);
+    });
+  } else {
+    const note = document.createElement("div");
+    note.className = "muted";
+    note.textContent = "No supported campaign/search-term sheets detected for mapping.";
+    mappingPanel.appendChild(note);
+  }
+
+  if (portfolioSheetName && portfolioSheet) {
     const section = document.createElement("div");
     section.className = "mapping-sheet";
 
     const title = document.createElement("h3");
-    title.textContent = sheetName;
+    title.textContent = `${portfolioSheetName} (currency)`;
     section.appendChild(title);
+
+    const help = document.createElement("p");
+    help.className = "muted";
+    help.textContent =
+      "Select the currency code column (e.g. USD, GBP, EUR). This only affects UI display.";
+    section.appendChild(help);
 
     const grid = document.createElement("div");
     grid.className = "mapping-grid";
 
-    FIELD_DEFS.forEach((field) => {
-      const label = document.createElement("label");
-      label.textContent = field.label;
+    const label = document.createElement("label");
+    label.textContent = "Currency code";
 
-      const select = document.createElement("select");
-      const blankOption = document.createElement("option");
-      blankOption.value = "";
-      blankOption.textContent = "—";
-      select.appendChild(blankOption);
+    const select = document.createElement("select");
+    const blankOption = document.createElement("option");
+    blankOption.value = "";
+    blankOption.textContent = "—";
+    select.appendChild(blankOption);
 
-      sheet.columns.forEach((column) => {
-        const option = document.createElement("option");
-        option.value = column;
-        option.textContent = column;
-        select.appendChild(option);
-      });
-
-      const selection =
-        (state.mappingSelections[sheetName] || {})[field.key] || "";
-      select.value = selection;
-
-      select.addEventListener("change", () => {
-        state.mappingSelections[sheetName] =
-          state.mappingSelections[sheetName] || {};
-        state.mappingSelections[sheetName][field.key] = select.value;
-        recompute();
-      });
-
-      grid.appendChild(label);
-      grid.appendChild(select);
+    portfolioSheet.columns.forEach((column) => {
+      const option = document.createElement("option");
+      option.value = column;
+      option.textContent = column;
+      select.appendChild(option);
     });
 
+    const selectedColumn =
+      (state.mappingSelections[portfolioSheetName] || {}).currencyCode || "";
+    select.value = selectedColumn;
+
+    select.addEventListener("change", () => {
+      state.mappingSelections[portfolioSheetName] =
+        state.mappingSelections[portfolioSheetName] || {};
+      state.mappingSelections[portfolioSheetName].currencyCode = select.value;
+      recompute();
+    });
+
+    grid.appendChild(label);
+    grid.appendChild(select);
     section.appendChild(grid);
     mappingPanel.appendChild(section);
-  });
+  }
 }
 
 function recompute() {
@@ -752,6 +844,10 @@ function recompute() {
     brandAliases: state.brandAliases,
   });
   state.datasets = datasets;
+  state.currencyCode = detectCurrencyCodeFromSheetData(
+    state.sheetData,
+    state.mappingSelections
+  );
   state.accountTotals = computeSummary(
     datasets
       .filter((set) => set.def.kind === "campaign")
@@ -917,6 +1013,21 @@ function updateWorkspaceHeader() {
   if (workspaceTitle) {
     workspaceTitle.textContent = sectionConfig.title;
   }
+  if (workspaceSubtitle) {
+    const adTypeLabels = {
+      SP: "Sponsored Products",
+      SB: "Sponsored Brands",
+      SD: "Sponsored Display",
+    };
+    const showSubtitle =
+      sectionConfig.key !== "overview" &&
+      state.ui.adTypeFilter &&
+      state.ui.adTypeFilter !== "All";
+    workspaceSubtitle.textContent = showSubtitle
+      ? adTypeLabels[state.ui.adTypeFilter] || state.ui.adTypeFilter
+      : "";
+    workspaceSubtitle.style.visibility = showSubtitle ? "visible" : "hidden";
+  }
   if (workspaceBreadcrumb) {
     const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
     workspaceBreadcrumb.innerHTML = `
@@ -956,6 +1067,20 @@ function updateWorkspaceHeader() {
   }
   if (adTypeFilter) {
     adTypeFilter.value = state.ui.adTypeFilter;
+  }
+  if (adTypeFilterWrap) {
+    adTypeFilterWrap.style.display = "none";
+  }
+  if (adTypeChipsWrap) {
+    adTypeChipsWrap.style.display = sectionConfig.key === "overview" ? "none" : "flex";
+  }
+  if (adTypeChips) {
+    adTypeChips.style.display = sectionConfig.key === "overview" ? "none" : "flex";
+    adTypeChipButtons.forEach((button) => {
+      const isActive = button.dataset.adtype === state.ui.adTypeFilter;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
   }
   if (groupedBySelect) {
     groupedBySelect.value = state.ui.groupedBy;
@@ -1068,7 +1193,7 @@ function updateSortOptions(isGroupedView) {
     return;
   }
   if (
-    !["label", "spend", "sales", "clicks", "orders", "cpc", "acos", "roas", "cvr", "spendSharePct", "salesSharePct"].includes(state.ui.sortKey) ||
+    !["label", "count", "spend", "sales", "clicks", "orders", "cpc", "acos", "roas", "cvr", "spendSharePct", "salesSharePct"].includes(state.ui.sortKey) ||
     !["asc", "desc"].includes(state.ui.sortDirection)
   ) {
     state.ui.sortKey = "spend";
@@ -2564,8 +2689,9 @@ function applyRecommendationTarget(target) {
   if (!target?.section) {
     return;
   }
-  state.ui.activeSection = target.section;
-  const sectionConfig = getSectionConfig(target.section);
+  const normalizedSection = normalizeSectionKey(target.section);
+  state.ui.activeSection = normalizedSection;
+  const sectionConfig = getSectionConfig(normalizedSection);
   state.ui.viewMode = target.viewMode || sectionConfig.defaultView;
   if (target.adTypeFilter) {
     state.ui.adTypeFilter = target.adTypeFilter;
@@ -2586,6 +2712,13 @@ function applyRecommendationTarget(target) {
   state.ui.selectedEntity = null;
   state.ui.inspectorOpen = false;
   renderApp();
+}
+
+function normalizeSectionKey(sectionKey) {
+  if (sectionKey === "bidding-strategies") {
+    return "placements";
+  }
+  return sectionKey;
 }
 
 function stripAdTypePrefix(key) {
@@ -2815,7 +2948,22 @@ function buildTableEntities(sectionConfig) {
 
 function renderGroupCards(groups) {
   if (!groups.length) {
-    return `<div class="card"><p class="muted">No entities found.</p></div>`;
+    const adType = getActiveAdTypeLabel();
+    const dataEmptySections = new Set([
+      "match-types",
+      "match-keywords",
+      "match-asins",
+      "match-asins-expanded",
+      "match-auto",
+      "match-categories",
+      "match-related",
+      "search-terms",
+      "negative-keywords",
+    ]);
+    const message = dataEmptySections.has(state.ui.activeSection)
+      ? `No data for ${adType} found.`
+      : "No entities found.";
+    return `<div class="card"><p class="muted">${escapeHtml(message)}</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
   const sorted = applySorting(
@@ -2849,7 +2997,22 @@ function renderGroupCards(groups) {
 
 function renderTable(rows) {
   if (!rows.length) {
-    return `<div class="card"><p class="muted">No entities found.</p></div>`;
+    const adType = getActiveAdTypeLabel();
+    const dataEmptySections = new Set([
+      "match-types",
+      "match-keywords",
+      "match-asins",
+      "match-asins-expanded",
+      "match-auto",
+      "match-categories",
+      "match-related",
+      "search-terms",
+      "negative-keywords",
+    ]);
+    const message = dataEmptySections.has(state.ui.activeSection)
+      ? `No data for ${adType} found.`
+      : "No entities found.";
+    return `<div class="card"><p class="muted">${escapeHtml(message)}</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
   const baseFiltered = rows.filter((item) =>
@@ -2868,8 +3031,41 @@ function renderTable(rows) {
   const visible = sorted.slice(0, limit);
   const isSearchTerms = state.ui.activeSection === "search-terms";
   const isMatchTypes = state.ui.activeSection === "match-types";
-  const showCopyIcon = state.ui.activeSection !== "match-types";
-  const columnCount = 8 + (isSearchTerms ? 2 : 0) + (isMatchTypes ? 2 : 0);
+  const isPlacements = state.ui.activeSection === "placements";
+  const clickOnlySectionKeys = new Set(["campaigns", "ad-groups"]);
+  const detailedMetricSectionKeys = new Set([
+    "match-keywords",
+    "match-asins",
+    "match-asins-expanded",
+    "match-auto",
+    "match-categories",
+    "match-related",
+  ]);
+  const shareSectionKeys = new Set([
+    "campaigns",
+    "ad-groups",
+    "match-types",
+    "match-keywords",
+    "match-asins",
+    "match-asins-expanded",
+    "match-auto",
+    "match-categories",
+    "match-related",
+  ]);
+  const showShareColumns = shareSectionKeys.has(state.ui.activeSection);
+  const showClicks =
+    clickOnlySectionKeys.has(state.ui.activeSection) ||
+    isSearchTerms ||
+    isMatchTypes ||
+    isPlacements ||
+    detailedMetricSectionKeys.has(state.ui.activeSection);
+  const showCpc =
+    isSearchTerms || isMatchTypes || isPlacements || detailedMetricSectionKeys.has(state.ui.activeSection);
+  const showCopyIcon =
+    state.ui.activeSection !== "match-types" &&
+    state.ui.activeSection !== "placements";
+  const columnCount =
+    8 + (showClicks ? 1 : 0) + (showCpc ? 1 : 0) + (showShareColumns ? 2 : 0) + (isMatchTypes ? 1 : 0);
   const body = visible
     .map((item) => {
       const selected = state.ui.selectedEntity?.id === item.id;
@@ -2877,24 +3073,30 @@ function renderTable(rows) {
         selected && item.details
           ? renderDetailExpandedRow(item.details, columnCount)
           : "";
-      const clickCells = isSearchTerms
-        ? `<td class="num">${formatNumber(item.summary.clicks)}</td>
-          <td class="num">${formatCurrency(item.summary.cpc)}</td>`
+      const clickCells = showClicks
+        ? `<td class="num">${formatNumber(item.summary.clicks)}</td>`
         : "";
-      const shareCells = isMatchTypes
+      const shareCells = showShareColumns
         ? `<td class="num">${formatPercent(item.spendSharePct)}</td>
            <td class="num">${formatPercent(item.salesSharePct)}</td>`
+        : "";
+      const countCell = isMatchTypes
+        ? `<td class="num">${formatNumber(item.count || 0)}</td>`
         : "";
       const label =
         isSearchTerms && state.ui.searchTermFilter === "asins"
           ? String(item.label).toUpperCase()
           : item.label;
+      const displayLabel =
+        state.ui.activeSection === "placements"
+          ? formatPlacementTableLabel(label)
+          : label;
       const campaignLabel = isSearchTerms
         ? item.raw?.campaignName || item.raw?.campaignId || ""
         : "";
       const showCampaignChip =
         isSearchTerms && state.ui.searchTermShowCampaignChips && campaignLabel;
-      const copyValue = String(label || "");
+      const copyValue = String(displayLabel || "");
       const copyButton = showCopyIcon
         ? `<button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2906,13 +3108,13 @@ function renderTable(rows) {
       const nameCell = showCampaignChip
         ? `<div class="name-stack">
             <span class="name-cell">
-              ${escapeHtml(label)}
+                ${escapeHtml(displayLabel)}
               ${copyButton}
             </span>
             <span class="chip campaign-chip">${escapeHtml(campaignLabel)}</span>
           </div>`
         : `<span class="name-cell">
-            ${escapeHtml(label)}
+            ${escapeHtml(displayLabel)}
             ${copyButton}
           </span>`;
       return `
@@ -2921,34 +3123,55 @@ function renderTable(rows) {
             ${nameCell}
           </td>
           <td>${escapeHtml(item.adType || "—")}</td>
+          ${countCell}
+          ${shareCells}
           <td class="num">${formatCurrency(item.summary.spend)}</td>
           <td class="num">${formatCurrency(item.summary.sales)}</td>
           ${clickCells}
-          ${shareCells}
+          <td class="num">${formatNumber(item.summary.orders)}</td>
+          ${showCpc ? `<td class="num">${formatCurrency(item.summary.cpc)}</td>` : ""}
           <td class="num">${formatPercent(item.summary.acos)}</td>
           <td class="num">${formatRoas(item.summary.roas)}</td>
           <td class="num">${formatPercent(item.summary.cvr)}</td>
-          <td class="num">${formatNumber(item.summary.orders)}</td>
         </tr>
         ${detailRow}
       `;
     })
     .join("");
   const hasMore = visible.length < sorted.length;
+  const hidePrimaryRowCount =
+    state.ui.activeSection === "match-types" ||
+    state.ui.activeSection === "placements";
+  const footerCountText = hidePrimaryRowCount
+    ? ""
+    : `Showing ${visible.length} of ${sorted.length} rows`;
+  const footerControls = hasMore
+    ? `<div class="row">
+         <button class="btn ghost" data-table-more="more">Show 20 more</button>
+         <button class="btn ghost" data-table-more="all">Show all</button>
+       </div>`
+    : "";
+  const showFooter = Boolean(footerCountText || footerControls);
   const sortIndicator = (key) =>
     state.ui.sortKey === key
       ? `<span class="sort-indicator">${
           state.ui.sortDirection === "desc" ? "↓" : "↑"
         }</span>`
       : "";
-  const clickHeaders = isSearchTerms
-    ? `<th class="num" data-sort-key="clicks">Clicks${sortIndicator("clicks")}</th>
-       <th class="num" data-sort-key="cpc">CPC${sortIndicator("cpc")}</th>`
+  const clickHeaders = showClicks
+    ? `<th class="num" data-sort-key="clicks">Clicks${sortIndicator("clicks")}</th>`
     : "";
-  const shareHeaders = isMatchTypes
+  const cpcHeader = showCpc
+    ? `<th class="num" data-sort-key="cpc">CPC${sortIndicator("cpc")}</th>`
+    : "";
+  const shareHeaders = showShareColumns
     ? `<th class="num" data-sort-key="spendSharePct">Spend share %${sortIndicator("spendSharePct")}</th>
        <th class="num" data-sort-key="salesSharePct">Sales share %${sortIndicator("salesSharePct")}</th>`
     : "";
+  const countHeader = isMatchTypes
+    ? `<th class="num" data-sort-key="count">Count${sortIndicator("count")}</th>`
+    : "";
+  const ordersHeader = `<th class="num" data-sort-key="orders">Orders${sortIndicator("orders")}</th>`;
   return `
     <div class="table-wrap">
       <table>
@@ -2956,29 +3179,28 @@ function renderTable(rows) {
           <tr>
             <th data-sort-key="label">Name${sortIndicator("label")}</th>
             <th>Ad type</th>
+            ${countHeader}
+            ${shareHeaders}
             <th class="num" data-sort-key="spend">Spend${sortIndicator("spend")}</th>
             <th class="num" data-sort-key="sales">Sales${sortIndicator("sales")}</th>
             ${clickHeaders}
-            ${shareHeaders}
+            ${ordersHeader}
+            ${cpcHeader}
             <th class="num" data-sort-key="acos">ACoS${sortIndicator("acos")}</th>
             <th class="num" data-sort-key="roas">ROAS${sortIndicator("roas")}</th>
             <th class="num" data-sort-key="cvr">CVR${sortIndicator("cvr")}</th>
-            <th class="num" data-sort-key="orders">Orders${sortIndicator("orders")}</th>
           </tr>
         </thead>
         <tbody>${body}</tbody>
       </table>
-      <div class="table-footer">
-        <span>Showing ${visible.length} of ${sorted.length} rows</span>
-        ${
-          hasMore
-            ? `<div class="row">
-                <button class="btn ghost" data-table-more="more">Show 20 more</button>
-                <button class="btn ghost" data-table-more="all">Show all</button>
-              </div>`
-            : ""
-        }
-      </div>
+      ${
+        showFooter
+          ? `<div class="table-footer">
+               <span>${escapeHtml(footerCountText)}</span>
+               ${footerControls}
+             </div>`
+          : ""
+      }
     </div>
   `;
 }
@@ -3006,6 +3228,22 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
     : sortedRows.length;
   const visible = sortedRows.slice(0, limit);
   const hasMore = visible.length < sortedRows.length;
+  const showPlacementPercentage =
+    state.ui.activeSection === "placements" &&
+    sortedRows.some((row) => row.percentage !== null && row.percentage !== undefined);
+  const showPlacementBidding =
+    state.ui.activeSection === "placements" &&
+    sortedRows.some((row) => Boolean(row.biddingStrategy));
+  const useRequestedDetailMetricOrder =
+    state.ui.activeSection === "campaigns" ||
+    state.ui.activeSection === "ad-groups" ||
+    state.ui.activeSection === "match-types" ||
+    state.ui.activeSection === "match-keywords" ||
+    state.ui.activeSection === "match-asins" ||
+    state.ui.activeSection === "match-asins-expanded" ||
+    state.ui.activeSection === "match-auto" ||
+    state.ui.activeSection === "match-categories" ||
+    state.ui.activeSection === "match-related";
   const body = visible
     .map(
       (row) => `
@@ -3033,14 +3271,17 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
           <td class="num">${formatNumber(row.impressions)}</td>
           <td class="num">${formatNumber(row.clicks)}</td>
           <td class="num">${formatPercent(row.ctr)}</td>
+          ${useRequestedDetailMetricOrder ? `<td class="num">${formatCurrency(row.cpc)}</td>` : ""}
           <td class="num">${formatCurrency(row.spend)}</td>
           <td class="num">${formatCurrency(row.sales)}</td>
           <td class="num">${formatNumber(row.orders)}</td>
           <td class="num">${formatNumber(row.units)}</td>
-          <td class="num">${formatPercent(row.cvr)}</td>
           <td class="num">${formatPercent(row.acos)}</td>
-          <td class="num">${formatCurrency(row.cpc)}</td>
           <td class="num">${formatRoas(row.roas)}</td>
+          <td class="num">${formatPercent(row.cvr)}</td>
+          ${!useRequestedDetailMetricOrder ? `<td class="num">${formatCurrency(row.cpc)}</td>` : ""}
+          ${showPlacementPercentage ? `<td class="num">${formatPlacementPercent(row.percentage)}</td>` : ""}
+          ${showPlacementBidding ? `<td class="num">${renderPlacementBiddingIndicator(row.biddingStrategy)}</td>` : ""}
         </tr>
       `
     )
@@ -3058,14 +3299,17 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
                   <th class="num" data-detail-sort="impressions">Impr${state.ui.detailSortKey === "impressions" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="clicks">Clicks${state.ui.detailSortKey === "clicks" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="ctr">CTR${state.ui.detailSortKey === "ctr" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  ${useRequestedDetailMetricOrder ? `<th class="num" data-detail-sort="cpc">CPC${state.ui.detailSortKey === "cpc" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>` : ""}
                   <th class="num" data-detail-sort="spend">Spend${state.ui.detailSortKey === "spend" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="sales">Sales${state.ui.detailSortKey === "sales" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="orders">Orders${state.ui.detailSortKey === "orders" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="units">Units${state.ui.detailSortKey === "units" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
-                  <th class="num" data-detail-sort="cvr">CVR${state.ui.detailSortKey === "cvr" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="acos">ACoS${state.ui.detailSortKey === "acos" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
-                  <th class="num" data-detail-sort="cpc">CPC${state.ui.detailSortKey === "cpc" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
                   <th class="num" data-detail-sort="roas">ROAS${state.ui.detailSortKey === "roas" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  <th class="num" data-detail-sort="cvr">CVR${state.ui.detailSortKey === "cvr" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>
+                  ${!useRequestedDetailMetricOrder ? `<th class="num" data-detail-sort="cpc">CPC${state.ui.detailSortKey === "cpc" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>` : ""}
+                  ${showPlacementPercentage ? `<th class="num" data-detail-sort="percentage">Placement %${state.ui.detailSortKey === "percentage" ? `<span class="sort-indicator">${state.ui.detailSortDirection === "desc" ? "↓" : "↑"}</span>` : ""}</th>` : ""}
+                  ${showPlacementBidding ? `<th class="num">Bidding Strategy</th>` : ""}
                 </tr>
               </thead>
               <tbody>${body}</tbody>
@@ -3090,7 +3334,12 @@ function renderDetailExpandedRow(detailEntry, colSpan) {
 
 function renderBucketTable(rows) {
   if (!rows.length) {
-    return `<div class="card"><p class="muted">No grouped buckets found.</p></div>`;
+    const adType = getActiveAdTypeLabel();
+    const groupedEmptySections = new Set(["campaigns", "ad-groups"]);
+    const message = groupedEmptySections.has(state.ui.activeSection)
+      ? `No grouped data for ${adType} found.`
+      : "No grouped buckets found.";
+    return `<div class="card"><p class="muted">${escapeHtml(message)}</p></div>`;
   }
   const sorted = [...rows].sort((a, b) => {
     if (state.ui.sortKey === "group") {
@@ -3166,7 +3415,8 @@ function renderBucketTable(rows) {
 
 function renderNegativeCards(rows) {
   if (!rows.length) {
-    return `<div class="card"><p class="muted">No negatives found.</p></div>`;
+    const adType = getActiveAdTypeLabel();
+    return `<div class="card"><p class="muted">${escapeHtml(`No data for ${adType} found.`)}</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
   const filtered = rows.filter((item) =>
@@ -3336,6 +3586,10 @@ function renderAiInsightsForEntity() {
   `;
 }
 
+function getActiveAdTypeLabel() {
+  return String(state.ui.adTypeFilter || "All");
+}
+
 function collectInsights() {
   if (!state.ai.report?.sections) {
     return [];
@@ -3354,6 +3608,7 @@ function collectInsights() {
 }
 
 function getSectionConfig(sectionKey) {
+  const normalizedSectionKey = normalizeSectionKey(sectionKey);
   const base = {
     defaultView: "groups",
     allowViewToggle: true,
@@ -3477,26 +3732,19 @@ function getSectionConfig(sectionKey) {
       listMode: "rows",
       rowLabel: (row) => row.customerSearchTerm || "Search term",
     },
-    "bidding-strategies": {
-      ...base,
-      key: "bidding-strategies",
-      title: "Campaign Bidding Strategies",
-      entityLabel: "Strategy",
-      groupKey: (row) => row.biddingStrategy || "Unknown",
-      groupLabel: (row, key) => row.biddingStrategy || key,
-      listMode: "groups",
-    },
     placements: {
       ...base,
       key: "placements",
       title: "Placements",
       entityLabel: "Placement",
+      allowViewToggle: false,
+      defaultView: "table",
       groupKey: (row) => row.placement || "Unknown",
       groupLabel: (row, key) => row.placement || key,
       listMode: "groups",
     },
   };
-  return configs[sectionKey] || configs.overview;
+  return configs[normalizedSectionKey] || configs.overview;
 }
 
 function filterRowsBySection(sectionConfig) {
@@ -3569,8 +3817,6 @@ function filterRowsBySection(sectionConfig) {
         }
         return !isAsin;
       });
-    case "bidding-strategies":
-      return campaignRows.filter((row) => row.biddingStrategy);
     case "placements":
       return campaignRows.filter((row) => row.placement);
     default:
@@ -3591,6 +3837,22 @@ function applySorting(items) {
   return [...items].sort((a, b) => {
     if (key === "label") {
       return direction * String(a.label || "").localeCompare(String(b.label || ""));
+    }
+    if (key === "count") {
+      const aVal = Number(a.count || 0);
+      const bVal = Number(b.count || 0);
+      if (aVal === bVal) {
+        return 0;
+      }
+      return aVal > bVal ? direction : -direction;
+    }
+    if (key === "spendSharePct" || key === "salesSharePct") {
+      const aVal = Number(a[key] || 0);
+      const bVal = Number(b[key] || 0);
+      if (aVal === bVal) {
+        return 0;
+      }
+      return aVal > bVal ? direction : -direction;
     }
     const aVal = a.summary?.[key] ?? 0;
     const bVal = b.summary?.[key] ?? 0;
@@ -3744,7 +4006,95 @@ function formatCurrency(value) {
     Math.abs(numeric) < 100
       ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
       : { minimumFractionDigits: 0, maximumFractionDigits: 0 };
-  return `£${numeric.toLocaleString("en-GB", options)}`;
+  const currencyCode = String(state.currencyCode || "GBP").toUpperCase();
+  try {
+    const formatter = new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: currencyCode,
+      currencyDisplay: "symbol",
+      ...options,
+    });
+    return formatter.format(numeric);
+  } catch (_error) {
+    return `${currencyCode} ${numeric.toLocaleString("en-GB", options)}`;
+  }
+}
+
+function detectCurrencyCodeFromSheetData(sheetData, mappingSelections = {}) {
+  const entries = Object.entries(sheetData || {});
+  const normalizeHeader = (value) =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "");
+  const isCurrencyCode = (value) => /^[A-Z]{3}$/.test(String(value || "").trim().toUpperCase());
+
+  const portfolioEntry = entries.find(([sheetName]) => isPortfolioSheetName(sheetName));
+  if (!portfolioEntry) {
+    return "GBP";
+  }
+  const [sheetName, sheet] = portfolioEntry;
+  const mapping = mappingSelections[sheetName] || {};
+  const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+  const mappedColumn = String(mapping.currencyCode || "").trim();
+
+  if (mappedColumn) {
+    for (const row of rows) {
+      const value = String(row?.[mappedColumn] || "").trim().toUpperCase();
+      if (isCurrencyCode(value)) {
+        return value;
+      }
+    }
+  }
+
+  const candidateHeaders = new Set([
+    "budgetcurrencycode",
+    "currencycode",
+    "currency",
+    "accountcurrency",
+    "portfoliocurrencycode",
+  ]);
+
+  for (const row of rows) {
+    for (const [key, rawValue] of Object.entries(row || {})) {
+      if (!candidateHeaders.has(normalizeHeader(key))) {
+        continue;
+      }
+      const value = String(rawValue || "").trim().toUpperCase();
+      if (isCurrencyCode(value)) {
+        return value;
+      }
+    }
+  }
+
+  return "GBP";
+}
+
+function isPortfolioSheetName(sheetName) {
+  return normalizeHeaderKey(sheetName).includes("portfolio");
+}
+
+function normalizeHeaderKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function findPortfolioSheetName(sheetData) {
+  const entries = Object.keys(sheetData || {});
+  return entries.find((name) => isPortfolioSheetName(name)) || "";
+}
+
+function findMatchingColumnName(columns, candidates) {
+  const normalizedToOriginal = new Map(
+    (columns || []).map((column) => [normalizeHeaderKey(column), column])
+  );
+  for (const candidate of candidates || []) {
+    const found = normalizedToOriginal.get(normalizeHeaderKey(candidate));
+    if (found) {
+      return found;
+    }
+  }
+  return "";
 }
 
 function formatDateRangeLabel(value) {
@@ -3784,6 +4134,35 @@ function formatPercent(value) {
   return `${(numeric * 100).toFixed(1)}%`;
 }
 
+function formatPlacementPercent(value) {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "—";
+  }
+  const displayValue = Math.abs(numeric) <= 1 ? numeric * 100 : numeric;
+  return `${displayValue.toFixed(1)}%`;
+}
+
+function renderPlacementBiddingIndicator(strategyKey) {
+  const value = String(strategyKey || "").trim().toLowerCase();
+  if (!value) {
+    return "";
+  }
+  if (value === "down-only") {
+    return `<span class="chip bidding-chip bidding-chip-down" title="Dynamic bids - down only">↘ Down</span>`;
+  }
+  if (value === "up-and-down") {
+    return `<span class="chip bidding-chip bidding-chip-updown" title="Dynamic bids - up and down">↕ Up/Down</span>`;
+  }
+  if (value === "fixed") {
+    return `<span class="chip bidding-chip bidding-chip-fixed" title="Fixed bids">● Fixed</span>`;
+  }
+  return "";
+}
+
 function formatRoas(value) {
   if (value === null || value === undefined) {
     return "—";
@@ -3804,6 +4183,24 @@ function formatNumber(value) {
     return "—";
   }
   return Math.round(numeric).toLocaleString("en-GB");
+}
+
+function formatPlacementTableLabel(value) {
+  const text = String(value || "").trim();
+  const normalized = text.toLowerCase();
+  if (normalized === "placement top") {
+    return "Top of Search";
+  }
+  if (normalized === "placement product page") {
+    return "Product Pages";
+  }
+  if (normalized === "placement rest of search") {
+    return "Rest of Search";
+  }
+  if (normalized === "placement amazon business") {
+    return "Business";
+  }
+  return text;
 }
 
 function truncateLabel(value, maxLength) {

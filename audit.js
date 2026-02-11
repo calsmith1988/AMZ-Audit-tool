@@ -37,6 +37,7 @@ export const DEFAULT_MAPPING = {
   ],
   adGroupServingStatusInfo: ["Ad group serving status (Informational only)"],
   placement: ["Placement"],
+  percentage: ["Percentage"],
   biddingStrategy: ["Bidding strategy"],
   campaignName: ["Campaign name (Informational only)", "Campaign name"],
   adGroupName: ["Ad group name", "Ad group name (Informational only)"],
@@ -67,6 +68,7 @@ export const FIELD_DEFS = [
   { key: "adGroupStateInfo", label: "Ad Group State (Informational only)" },
   { key: "adGroupServingStatusInfo", label: "Ad group serving status (Informational only)" },
   { key: "placement", label: "Placement" },
+  { key: "percentage", label: "Percentage" },
   { key: "biddingStrategy", label: "Bidding strategy" },
   { key: "campaignName", label: "Campaign name" },
   { key: "adGroupName", label: "Ad group name" },
@@ -268,6 +270,7 @@ export function normalizeRow(row, mapping, adType, kind) {
     row[mapping.adGroupServingStatusInfo]
   );
   const placement = cleanText(row[mapping.placement]);
+  const percentage = parseOptionalPercent(row[mapping.percentage]);
   const biddingStrategy = cleanText(row[mapping.biddingStrategy]);
   const spend = parseNumber(row[mapping.spend]);
   const sales = parseNumber(row[mapping.sales]);
@@ -312,6 +315,7 @@ export function normalizeRow(row, mapping, adType, kind) {
     adGroupStateInfo,
     adGroupServingStatusInfo,
     placement,
+    percentage,
     biddingStrategy,
     campaignId,
     adGroupId,
@@ -370,9 +374,22 @@ function computeDetailMetrics(rows) {
       acc.sales += row.sales || 0;
       acc.orders += row.orders || 0;
       acc.units += row.units || 0;
+      if (row.percentage !== null && row.percentage !== undefined) {
+        acc.percentageSum += row.percentage;
+        acc.percentageCount += 1;
+      }
       return acc;
     },
-    { impressions: 0, clicks: 0, spend: 0, sales: 0, orders: 0, units: 0 }
+    {
+      impressions: 0,
+      clicks: 0,
+      spend: 0,
+      sales: 0,
+      orders: 0,
+      units: 0,
+      percentageSum: 0,
+      percentageCount: 0,
+    }
   );
   return {
     impressions: totals.impressions,
@@ -386,16 +403,23 @@ function computeDetailMetrics(rows) {
     acos: totals.sales ? totals.spend / totals.sales : null,
     cpc: totals.clicks ? totals.spend / totals.clicks : null,
     roas: totals.spend ? totals.sales / totals.spend : null,
+    percentage: totals.percentageCount
+      ? totals.percentageSum / totals.percentageCount
+      : null,
   };
 }
 
-function buildDetailRows(rows, keyFn, labelFn) {
+function buildDetailRows(rows, keyFn, labelFn, metaFn) {
   const grouped = groupBy(rows, keyFn);
   return Object.entries(grouped)
-    .map(([key, items]) => ({
-      label: labelFn ? labelFn(items[0], key, items) : key,
-      ...computeDetailMetrics(items),
-    }))
+    .map(([key, items]) => {
+      const meta = metaFn ? metaFn(items, key) : {};
+      return {
+        label: labelFn ? labelFn(items[0], key, items) : key,
+        ...computeDetailMetrics(items),
+        ...meta,
+      };
+    })
     .sort((a, b) => (b.spend || 0) - (a.spend || 0));
 }
 
@@ -414,12 +438,19 @@ function getCampaignLabelFromRows(rows) {
   return "Multiple campaigns";
 }
 
-function buildDetailIndexByParent(rows, parentKeyFn, detailKeyFn, detailLabelFn, title) {
+function buildDetailIndexByParent(
+  rows,
+  parentKeyFn,
+  detailKeyFn,
+  detailLabelFn,
+  title,
+  detailMetaFn
+) {
   const grouped = groupBy(rows, parentKeyFn);
   return Object.entries(grouped).reduce((acc, [parentKey, items]) => {
     acc[parentKey] = {
       title,
-      rows: buildDetailRows(items, detailKeyFn, detailLabelFn),
+      rows: buildDetailRows(items, detailKeyFn, detailLabelFn, detailMetaFn),
     };
     return acc;
   }, {});
@@ -556,7 +587,8 @@ function buildInspectorDetails(campaignRows, adType) {
     (row) => row.placement || "Unknown",
     (row) => buildCampaignKey(row),
     (_row, key, items) => pickCampaignLabel(items, key),
-    "Campaigns"
+    "Campaigns",
+    (items) => ({ biddingStrategy: pickBiddingStrategy(items) })
   );
 
   const negativeKeywords = buildDetailIndexByParent(
@@ -1042,6 +1074,42 @@ function pickCampaignLabel(items, fallbackKey) {
   return fallbackKey || "Unmapped";
 }
 
+function normalizeBiddingStrategyValue(value) {
+  const normalized = normalizeValue(value).replace(/[–—]/g, "-");
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.includes("up and down")) {
+    return "up-and-down";
+  }
+  if (normalized.includes("down only")) {
+    return "down-only";
+  }
+  if (normalized.includes("fixed")) {
+    return "fixed";
+  }
+  return "";
+}
+
+function pickBiddingStrategy(items) {
+  const strategyCounts = {
+    "up-and-down": 0,
+    "down-only": 0,
+    fixed: 0,
+  };
+  items.forEach((item) => {
+    const key = normalizeBiddingStrategyValue(item.biddingStrategy);
+    if (key) {
+      strategyCounts[key] += 1;
+    }
+  });
+  const entries = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1]);
+  if (!entries[0] || entries[0][1] <= 0) {
+    return "";
+  }
+  return entries[0][0];
+}
+
 function extractAsinTarget(expression) {
   if (!expression) {
     return "";
@@ -1465,6 +1533,17 @@ export function parseNumber(value) {
     .trim();
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseOptionalPercent(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const parsed = parseNumber(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
 }
 
 export function cleanText(value) {

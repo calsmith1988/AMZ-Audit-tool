@@ -97,6 +97,54 @@ img {
   background: var(--surface);
 }
 
+.adtype-chips {
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.adtype-chip {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  line-height: 1;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background-color: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease, border-color 0.2s ease,
+    box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.adtype-chip:hover {
+  border-color: var(--border-strong);
+  background-color: transparent;
+  color: var(--text);
+}
+
+.adtype-chip.active {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.adtype-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .app-body {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 400px;
@@ -472,6 +520,12 @@ img {
   letter-spacing: 0.08em;
   font-size: 11px;
   margin-bottom: 4px;
+}
+
+.workspace-subtitle {
+  margin-top: 4px;
+  min-height: 16px;
+  line-height: 16px;
 }
 
 .breadcrumb-link {
@@ -1242,6 +1296,35 @@ tbody tr {
   border-radius: var(--r-sm);
   background: #f9fafc;
   color: var(--text-muted);
+}
+
+.bidding-chip {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-weight: 400;
+  line-height: 1.2;
+  min-width: 62px;
+  justify-content: center;
+}
+
+.bidding-chip-down {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #1d4ed8;
+}
+
+.bidding-chip-updown {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.28);
+  color: #b45309;
+}
+
+.bidding-chip-fixed {
+  background: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.28);
+  color: #334155;
 }
 
 .copy-btn {
