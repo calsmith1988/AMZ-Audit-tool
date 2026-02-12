@@ -46,6 +46,11 @@ export const DEFAULT_MAPPING = {
   keywordText: ["Keyword text", "Native language keyword"],
   matchType: ["Match type"],
   customerSearchTerm: ["Customer search term"],
+  advertisedAsin: [
+    "Advertised ASIN",
+    "Advertised ASIN (Informational only)",
+    "ASIN",
+  ],
   productTargetingExpression: [
     "Product targeting expression",
     "Targeting expression",
@@ -77,6 +82,7 @@ export const FIELD_DEFS = [
   { key: "keywordText", label: "Keyword text" },
   { key: "matchType", label: "Match type" },
   { key: "customerSearchTerm", label: "Customer search term" },
+  { key: "advertisedAsin", label: "Advertised ASIN" },
   { key: "productTargetingExpression", label: "Product targeting expression" },
   { key: "impressions", label: "Impressions" },
   { key: "clicks", label: "Clicks" },
@@ -288,6 +294,7 @@ export function normalizeRow(row, mapping, adType, kind) {
     typeof matchInfo === "string" ? matchInfo : matchInfo.label;
   const autoSubType =
     typeof matchInfo === "string" ? "" : matchInfo.autoSubType;
+  const advertisedAsin = cleanText(row[mapping.advertisedAsin]);
   const productTargetingExpression = cleanText(
     row[mapping.productTargetingExpression]
   );
@@ -325,6 +332,7 @@ export function normalizeRow(row, mapping, adType, kind) {
     keywordText,
     matchType,
     autoSubType,
+    advertisedAsin,
     productTargetingExpression,
     customerSearchTerm,
     asinTarget,

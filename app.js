@@ -53,6 +53,8 @@ const state = {
   },
   ui: {
     activeSection: "overview",
+    overviewAdType: "SP",
+    overviewAnimateOnLoad: true,
     viewMode: "groups",
     searchQuery: "",
     sortKey: "spend",
@@ -71,6 +73,7 @@ const state = {
     searchTermFilter: "terms",
     searchTermShowCampaignChips: false,
     negativeKeywordFilter: "keywords",
+    matchRowMode: "totals",
     showCampaignChips: true,
     noSalesFilter: "all",
     groupedBy: "acos",
@@ -113,6 +116,8 @@ const adTypeChips = document.getElementById("adtype-chips");
 const adTypeChipButtons = adTypeChips?.querySelectorAll("[data-adtype]") || [];
 const groupedByWrap = document.getElementById("grouped-by-wrap");
 const groupedBySelect = document.getElementById("grouped-by");
+const matchRowModeWrap = document.getElementById("match-row-mode-wrap");
+const matchRowModeSelect = document.getElementById("match-row-mode");
 const searchTermFilter = document.getElementById("searchterm-filter");
 const searchTermFilterWrap = document.getElementById("searchterm-filter-wrap");
 const searchTermExport = document.getElementById("searchterm-export");
@@ -139,11 +144,22 @@ const uploadName = document.getElementById("upload-name");
 const uploadDateStart = document.getElementById("upload-date-start");
 const uploadDateEnd = document.getElementById("upload-date-end");
 const uploadNotes = document.getElementById("upload-notes");
+const uploadBrandInput = document.getElementById("upload-brand-input");
+const uploadBrandAdd = document.getElementById("upload-brand-add");
+const uploadBrandList = document.getElementById("upload-brand-list");
+const uploadBrandNote = document.getElementById("upload-brand-note");
+const brandModal = document.getElementById("brand-modal");
+const brandClose = document.getElementById("brand-close");
+const brandBack = document.getElementById("brand-back");
+const brandConfirm = document.getElementById("brand-confirm");
 
 const settingsModal = document.getElementById("settings-modal");
 const settingsOpen = document.getElementById("settings-open");
 const settingsClose = document.getElementById("settings-close");
 const appBody = document.querySelector(".app-body");
+
+let uploadBrandAliasesDraft = [];
+let pendingUploadMeta = null;
 
 function openModal(modal) {
   if (modal) {
@@ -166,6 +182,197 @@ function setCreateLoading(isLoading) {
   uploadCreate.innerHTML = isLoading
     ? `<span class="spinner" aria-hidden="true"></span>Creating & building action plan...`
     : "Create session";
+}
+
+function syncBrandAliasesInput() {
+  if (brandInput) {
+    brandInput.value = (state.brandAliases || []).join(", ");
+  }
+}
+
+function dedupeBrandAliases(aliases) {
+  const seen = new Set();
+  return (aliases || []).reduce((acc, alias) => {
+    const value = String(alias || "").trim();
+    if (!value) {
+      return acc;
+    }
+    const key = value.toLowerCase();
+    if (seen.has(key)) {
+      return acc;
+    }
+    seen.add(key);
+    acc.push(value);
+    return acc;
+  }, []);
+}
+
+function renderUploadBrandList() {
+  if (!uploadBrandList) {
+    return;
+  }
+  if (!uploadBrandAliasesDraft.length) {
+    uploadBrandList.innerHTML = "";
+    return;
+  }
+  uploadBrandList.innerHTML = uploadBrandAliasesDraft
+    .map(
+      (alias, index) => `
+        <span class="chip upload-brand-pill">
+          <span>${escapeHtml(alias)}</span>
+          <button class="upload-brand-remove" data-upload-brand-remove="${index}" type="button" aria-label="Remove ${escapeHtml(alias)}">✕</button>
+        </span>
+      `
+    )
+    .join("");
+  uploadBrandList.querySelectorAll("[data-upload-brand-remove]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.uploadBrandRemove);
+      if (!Number.isFinite(index) || index < 0 || index >= uploadBrandAliasesDraft.length) {
+        return;
+      }
+      uploadBrandAliasesDraft.splice(index, 1);
+      state.brandAliases = [...uploadBrandAliasesDraft];
+      syncBrandAliasesInput();
+      renderUploadBrandList();
+    });
+  });
+}
+
+function setUploadBrandNote(message = "", variant = "") {
+  if (!uploadBrandNote) {
+    return;
+  }
+  uploadBrandNote.textContent = message;
+  uploadBrandNote.classList.toggle("warning", variant === "warning" && Boolean(message));
+}
+
+function setUploadBrandAliases(aliases) {
+  uploadBrandAliasesDraft = dedupeBrandAliases(aliases);
+  setUploadBrandNote("");
+  renderUploadBrandList();
+}
+
+function addUploadBrandAlias(rawValue) {
+  const values = parseBrandAliases(rawValue);
+  if (!values.length) {
+    setUploadBrandNote("");
+    return;
+  }
+  let duplicateFound = false;
+  let added = 0;
+  values.forEach((value) => {
+    if (uploadBrandAliasesDraft.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      duplicateFound = true;
+      return;
+    }
+    uploadBrandAliasesDraft.push(value);
+    added += 1;
+  });
+  if (!added && duplicateFound) {
+    setUploadBrandNote("This brand name has already been identified.", "warning");
+    return;
+  }
+  if (duplicateFound) {
+    setUploadBrandNote("Some names were already identified and were skipped.", "warning");
+  } else {
+    setUploadBrandNote("");
+  }
+  state.brandAliases = [...uploadBrandAliasesDraft];
+  syncBrandAliasesInput();
+  renderUploadBrandList();
+}
+
+function resetPendingUpload() {
+  pendingUploadMeta = null;
+}
+
+function restoreCurrentSessionAfterCancelledUpload() {
+  if (state.activeSessionId) {
+    setActiveSession(state.activeSessionId);
+    return;
+  }
+  state.workbook = null;
+  state.sheetData = {};
+  state.mappingSelections = {};
+  state.results = null;
+  state.datasets = [];
+  state.accountTotals = null;
+  state.health = [];
+  renderMappingPanel();
+  renderApp();
+}
+
+function transitionModal(fromModal, toModal) {
+  if (!fromModal || !toModal || fromModal === toModal) {
+    return;
+  }
+  const fromCard = fromModal.querySelector(".modal-card");
+  const toCard = toModal.querySelector(".modal-card");
+  if (fromCard) {
+    fromCard.classList.add("modal-transition-out");
+  }
+  setTimeout(() => {
+    closeModal(fromModal);
+    if (fromCard) {
+      fromCard.classList.remove("modal-transition-out");
+    }
+    openModal(toModal);
+    if (!toCard) {
+      return;
+    }
+    toCard.classList.add("modal-transition-in");
+    requestAnimationFrame(() => {
+      toCard.classList.add("modal-transition-in-ready");
+      setTimeout(() => {
+        toCard.classList.remove("modal-transition-in");
+        toCard.classList.remove("modal-transition-in-ready");
+      }, 180);
+    });
+  }, 140);
+}
+
+function extractBrandAliasesFromSheetData(sheetData) {
+  const targetSheet = Object.entries(sheetData || {}).find(([sheetName]) =>
+    normalizeHeaderKey(sheetName).includes("brandassetsdatareadonly")
+  );
+  if (!targetSheet) {
+    return [];
+  }
+  const [, sheet] = targetSheet;
+  const rows = Array.isArray(sheet?.rows) ? sheet.rows : [];
+  if (!rows.length) {
+    return [];
+  }
+  const brandColumn = sheet.columns?.find(
+    (column) => normalizeHeaderKey(column) === "brandname"
+  );
+  if (!brandColumn) {
+    return [];
+  }
+  const shouldStopOnValue = (value) => {
+    const normalized = normalizeHeaderKey(value);
+    return (
+      normalized.includes("brandentityid") ||
+      normalized.includes("brandentityurl") ||
+      normalized.includes("brandentity")
+    );
+  };
+  const aliases = [];
+  for (const row of rows) {
+    const value = String(row?.[brandColumn] || "").trim();
+    if (shouldStopOnValue(value)) {
+      break;
+    }
+    if (!value && aliases.length) {
+      break;
+    }
+    if (!value) {
+      continue;
+    }
+    aliases.push(value);
+  }
+  return dedupeBrandAliases(aliases);
 }
 
 function updateSessionSelect() {
@@ -210,10 +417,11 @@ function setActiveSession(sessionId) {
   state.mappingSelections = session.mappingSelections;
   state.results = session.results;
   state.datasets = session.datasets;
-  state.brandAliases = session.brandAliases;
+  state.brandAliases = dedupeBrandAliases(session.brandAliases);
   state.currencyCode = session.currencyCode || "GBP";
   state.accountTotals = session.accountTotals;
   state.health = session.health;
+  syncBrandAliasesInput();
   resetActionPlan("Session changed. Regenerating action plan...");
   updateSessionSelect();
   renderMappingPanel();
@@ -237,7 +445,7 @@ function createSessionFromState(meta) {
     mappingSelections: state.mappingSelections,
     results: state.results,
     datasets: state.datasets,
-    brandAliases: state.brandAliases,
+    brandAliases: dedupeBrandAliases(meta.brandAliases || state.brandAliases),
     currencyCode: state.currencyCode,
     accountTotals: state.accountTotals,
     health: state.health,
@@ -262,9 +470,15 @@ function clearUploadForm() {
   if (uploadNotes) {
     uploadNotes.value = "";
   }
+  if (uploadBrandInput) {
+    uploadBrandInput.value = "";
+  }
+  uploadBrandAliasesDraft = [];
+  renderUploadBrandList();
   if (fileMeta) {
     fileMeta.textContent = "";
   }
+  resetPendingUpload();
 }
 
 if (uploadOpen) {
@@ -274,11 +488,19 @@ if (uploadOpen) {
       yesterday.setDate(yesterday.getDate() - 1);
       uploadDateEnd.value = yesterday.toISOString().slice(0, 10);
     }
+    setUploadBrandAliases(state.brandAliases);
+    if (uploadBrandInput) {
+      uploadBrandInput.value = "";
+    }
+    resetPendingUpload();
     openModal(uploadModal);
   });
 }
 if (uploadClose) {
-  uploadClose.addEventListener("click", () => closeModal(uploadModal));
+  uploadClose.addEventListener("click", () => {
+    closeModal(uploadModal);
+    clearUploadForm();
+  });
 }
 if (settingsOpen) {
   settingsOpen.addEventListener("click", () => openModal(settingsModal));
@@ -300,12 +522,101 @@ if (uploadCreate) {
       dateEnd: uploadDateEnd?.value,
       notes: uploadNotes?.value?.trim(),
     };
+    pendingUploadMeta = meta;
     await loadWorkbook(fileInput.files[0]);
-    recompute();
-    createSessionFromState(meta);
-    clearUploadForm();
-    closeModal(uploadModal);
+    if (!state.workbook) {
+      setCreateLoading(false);
+      return;
+    }
+    const detectedBrands = extractBrandAliasesFromSheetData(state.sheetData);
+    setUploadBrandAliases(detectedBrands);
+    state.brandAliases = [...uploadBrandAliasesDraft];
+    syncBrandAliasesInput();
+    try {
+      recompute();
+    } catch (error) {
+      console.error("Failed to prepare upload before brand step:", error);
+      alert("We couldn't process this upload. Please check the sheet and try again.");
+      setCreateLoading(false);
+      return;
+    }
+    if (uploadBrandInput) {
+      uploadBrandInput.value = "";
+    }
+    transitionModal(uploadModal, brandModal);
     setCreateLoading(false);
+  });
+}
+
+if (uploadBrandAdd) {
+  uploadBrandAdd.addEventListener("click", () => {
+    addUploadBrandAlias(uploadBrandInput?.value);
+    if (uploadBrandInput) {
+      uploadBrandInput.value = "";
+      uploadBrandInput.focus();
+    }
+  });
+}
+
+if (uploadBrandInput) {
+  uploadBrandInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    addUploadBrandAlias(uploadBrandInput.value);
+    uploadBrandInput.value = "";
+  });
+  uploadBrandInput.addEventListener("input", () => {
+    if (uploadBrandNote?.textContent) {
+      setUploadBrandNote("");
+    }
+  });
+}
+
+if (brandBack) {
+  brandBack.addEventListener("click", () => {
+    transitionModal(brandModal, uploadModal);
+  });
+}
+
+if (brandClose) {
+  brandClose.addEventListener("click", () => {
+    closeModal(brandModal);
+    clearUploadForm();
+    restoreCurrentSessionAfterCancelledUpload();
+  });
+}
+
+if (brandConfirm) {
+  brandConfirm.addEventListener("click", async () => {
+    if (!pendingUploadMeta) {
+      closeModal(brandModal);
+      return;
+    }
+    const originalLabel = brandConfirm.textContent;
+    brandConfirm.disabled = true;
+    brandConfirm.textContent = "Creating session...";
+    try {
+      pendingUploadMeta.brandAliases = dedupeBrandAliases(uploadBrandAliasesDraft);
+      state.brandAliases = [...pendingUploadMeta.brandAliases];
+      syncBrandAliasesInput();
+      await Promise.resolve();
+      try {
+        recompute();
+      } catch (error) {
+        console.error("Recompute failed during brand confirm; using prepared data:", error);
+      }
+      createSessionFromState(pendingUploadMeta);
+      closeModal(brandModal);
+      clearUploadForm();
+    } catch (error) {
+      console.error("Failed to create session from brand modal:", error);
+      alert("We couldn't create the session. Please try again.");
+    } finally {
+      brandConfirm.disabled = false;
+      brandConfirm.textContent = originalLabel || "Create session";
+    }
   });
 }
 
@@ -326,7 +637,11 @@ navItems.forEach((item) => {
       syncNav();
       return;
     }
-    state.ui.activeSection = item.dataset.section;
+    const nextSection = item.dataset.section;
+    const previousSection = state.ui.activeSection;
+    state.ui.activeSection = nextSection;
+    state.ui.overviewAnimateOnLoad =
+      nextSection === "overview" && previousSection !== "overview";
     state.ui.selectedEntity = null;
     state.ui.selectedBucket = null;
     state.ui.searchQuery = "";
@@ -391,6 +706,14 @@ adTypeChipButtons.forEach((button) => {
 if (groupedBySelect) {
   groupedBySelect.addEventListener("change", () => {
     state.ui.groupedBy = groupedBySelect.value;
+    renderApp();
+  });
+}
+
+if (matchRowModeSelect) {
+  matchRowModeSelect.addEventListener("change", () => {
+    state.ui.matchRowMode = matchRowModeSelect.value === "instances" ? "instances" : "totals";
+    state.ui.selectedEntity = null;
     renderApp();
   });
 }
@@ -585,7 +908,7 @@ if (mapUpload) {
 
 if (brandInput) {
   brandInput.addEventListener("input", () => {
-    state.brandAliases = parseBrandAliases(brandInput.value);
+    state.brandAliases = dedupeBrandAliases(parseBrandAliases(brandInput.value));
     recompute();
   });
 }
@@ -1010,6 +1333,13 @@ function renderSessionView() {
 
 function updateWorkspaceHeader() {
   const sectionConfig = getSectionConfig(state.ui.activeSection);
+  const isMatchSubSection =
+    sectionConfig.key.startsWith("match-") && sectionConfig.key !== "match-types";
+  const showMatchRowMode = isMatchSubSection && state.ui.viewMode === "table";
+  const isProductsSection = sectionConfig.key === "products";
+  if (isProductsSection && state.ui.adTypeFilter === "SB") {
+    state.ui.adTypeFilter = "All";
+  }
   if (workspaceTitle) {
     workspaceTitle.textContent = sectionConfig.title;
   }
@@ -1021,6 +1351,7 @@ function updateWorkspaceHeader() {
     };
     const showSubtitle =
       sectionConfig.key !== "overview" &&
+      sectionConfig.key !== "insights-hub" &&
       state.ui.adTypeFilter &&
       state.ui.adTypeFilter !== "All";
     workspaceSubtitle.textContent = showSubtitle
@@ -1048,7 +1379,9 @@ function updateWorkspaceHeader() {
   }
   if (workspaceControls) {
     workspaceControls.style.display =
-      sectionConfig.key === "overview" ? "none" : "flex";
+      sectionConfig.key === "overview" || sectionConfig.key === "insights-hub"
+        ? "none"
+        : "flex";
   }
   const isGroupedView =
     state.ui.viewMode === "groups" &&
@@ -1066,6 +1399,11 @@ function updateWorkspaceHeader() {
     sortSelect.value = `${state.ui.sortKey}-${state.ui.sortDirection}`;
   }
   if (adTypeFilter) {
+    Array.from(adTypeFilter.options).forEach((option) => {
+      const shouldHide = isProductsSection && option.value === "SB";
+      option.hidden = shouldHide;
+      option.disabled = shouldHide;
+    });
     adTypeFilter.value = state.ui.adTypeFilter;
   }
   if (adTypeFilterWrap) {
@@ -1077,6 +1415,8 @@ function updateWorkspaceHeader() {
   if (adTypeChips) {
     adTypeChips.style.display = sectionConfig.key === "overview" ? "none" : "flex";
     adTypeChipButtons.forEach((button) => {
+      const shouldHide = isProductsSection && button.dataset.adtype === "SB";
+      button.style.display = shouldHide ? "none" : "inline-flex";
       const isActive = button.dataset.adtype === state.ui.adTypeFilter;
       button.classList.toggle("active", isActive);
       button.setAttribute("aria-pressed", isActive ? "true" : "false");
@@ -1084,6 +1424,12 @@ function updateWorkspaceHeader() {
   }
   if (groupedBySelect) {
     groupedBySelect.value = state.ui.groupedBy;
+  }
+  if (matchRowModeWrap) {
+    matchRowModeWrap.style.display = showMatchRowMode ? "flex" : "none";
+  }
+  if (matchRowModeSelect) {
+    matchRowModeSelect.value = state.ui.matchRowMode;
   }
   if (searchTermFilterWrap) {
     searchTermFilterWrap.style.display =
@@ -1156,6 +1502,22 @@ function renderWorkspaceContent() {
     attachOverviewHandlers();
     return;
   }
+  if (sectionConfig.key === "insights-hub") {
+    workspaceContent.innerHTML = renderInsightsHub();
+    attachInsightsHubHandlers();
+    return;
+  }
+  if (sectionConfig.key === "products") {
+    const tableRows = buildTableEntities(sectionConfig);
+    workspaceContent.innerHTML = `
+      <div class="muted">
+        Product-level aggregation is SP and SD only.
+      </div>
+      ${renderTable(tableRows)}
+    `;
+    attachTableHandlers();
+    return;
+  }
   if (sectionConfig.key === "negative-keywords") {
     const tableRows = buildTableEntities(sectionConfig);
     workspaceContent.innerHTML = renderNegativeCards(tableRows);
@@ -1202,32 +1564,121 @@ function updateSortOptions(isGroupedView) {
 }
 
 function renderOverview() {
-  const adTypes = Object.keys(state.results.adTypes || {});
-  const cards = adTypes
+  const adTypes = Object.keys(state.results?.adTypes || {}).filter((adType) =>
+    ["SP", "SB", "SD"].includes(adType)
+  );
+  const cards = renderAdTypeOverviewCards({ animateOnLoad: state.ui.overviewAnimateOnLoad });
+  const topProducts = buildTopProductsBySales(3);
+  const showTopProductsCard = topProducts.length > 1;
+  const topProductsCard = `
+    <div class="card overview-card insights-products-card">
+      <div class="row space-between">
+        <h3 class="card-title">Top products by sales</h3>
+        <span class="chip">SP + SD</span>
+      </div>
+      ${renderTopProductsBySalesList(topProducts)}
+    </div>
+  `;
+  state.ui.overviewAnimateOnLoad = false;
+
+  const selectedAdType = getOverviewSelectedAdType(adTypes);
+  const counts = buildOverviewCounts(selectedAdType);
+  const topSalesTargets = buildOverviewTopTargets(selectedAdType, "sales");
+  const topSpendTargets = buildOverviewTopTargets(selectedAdType, "spend");
+  const adTypeTabs = adTypes
     .map((adType) => {
-      const summary = state.results.adTypes[adType]?.summary;
-      if (!summary) {
-        return "";
-      }
+      const activeClass = adType === selectedAdType ? "active" : "";
       return `
-        <div class="card">
-          <h3 class="card-title">${escapeHtml(adType)} Overview</h3>
-          <div class="kpi-grid">
-            ${renderKpi("Spend", formatCurrency(summary.spend))}
-            ${renderKpi("Sales", formatCurrency(summary.sales))}
-            ${renderKpi("ACoS", formatPercent(summary.acos))}
-            ${renderKpi("ROAS", formatRoas(summary.roas))}
-          </div>
-        </div>
+        <button class="view-btn ${activeClass}" data-overview-adtype="${escapeHtml(adType)}">
+          ${escapeHtml(adType)}
+        </button>
       `;
     })
     .join("");
 
   return `
-    <div class="kpi-grid">${cards}</div>
-    ${renderAiRecommendationsHub(true)}
-    ${renderActionHub()}
+    <div class="insights-overview-grid ${showTopProductsCard ? "has-products-card" : "no-products-card"}">${cards}${showTopProductsCard ? topProductsCard : ""}</div>
+    <div class="overview-dashboard-grid">
+      <div class="card overview-panel">
+        <div class="row space-between overview-panel-header">
+          <strong>Ad Type Breakdown</strong>
+          <div class="view-toggle overview-adtype-toggle">${adTypeTabs}</div>
+        </div>
+        <div class="overview-count-grid">
+          ${renderOverviewCountMetric("Campaigns", counts.campaigns)}
+          ${renderOverviewCountMetric("Keywords", counts.keywords)}
+          ${renderOverviewCountMetric("ASINs", counts.asins)}
+          ${
+            selectedAdType === "SP"
+              ? renderOverviewCountMetric("ASINs Expanded", counts.asinsExpanded)
+              : ""
+          }
+          ${
+            selectedAdType === "SP"
+              ? renderOverviewCountMetric("Auto", counts.auto)
+              : ""
+          }
+          ${renderOverviewCountMetric("Category", counts.category)}
+        </div>
+      </div>
+      <div class="card overview-panel">
+        <div class="row space-between overview-panel-header">
+          <strong>Top 5 Sales Targets</strong>
+          <span class="chip">${escapeHtml(selectedAdType)}</span>
+        </div>
+        ${renderOverviewTargetList(topSalesTargets, "sales")}
+      </div>
+      <div class="card overview-panel">
+        <div class="row space-between overview-panel-header">
+          <strong>Top 5 Spend Targets</strong>
+          <span class="chip">${escapeHtml(selectedAdType)}</span>
+        </div>
+        ${renderOverviewTargetList(topSpendTargets, "spend")}
+      </div>
+    </div>
   `;
+}
+
+function renderInsightsHub() {
+  return `
+    <div class="insights-hub-grid">
+      ${renderAiRecommendationsHub(true)}
+      ${renderActionHub()}
+    </div>
+  `;
+}
+
+function renderAdTypeOverviewCards({ animateOnLoad = false } = {}) {
+  const adTypes = Object.keys(state.results?.adTypes || {}).filter((adType) =>
+    ["SP", "SB", "SD"].includes(adType)
+  );
+  const totalSpend = Number(state.accountTotals?.spend) || 0;
+  const totalSales = Number(state.accountTotals?.sales) || 0;
+  return adTypes
+    .map((adType) => {
+      const summary = state.results.adTypes[adType]?.summary;
+      if (!summary) {
+        return "";
+      }
+      const spendShare = totalSpend > 0 ? Number(summary.spend || 0) / totalSpend : 0;
+      const salesShare = totalSales > 0 ? Number(summary.sales || 0) / totalSales : 0;
+      return `
+        <div class="card overview-card ${animateOnLoad ? "overview-card-animate" : ""}">
+          <h3 class="card-title">${escapeHtml(adType)} Overview</h3>
+          <div class="kpi-grid overview-kpi-grid">
+            ${renderKpi("Spend", formatCurrency(summary.spend))}
+            ${renderKpi("Sales", formatCurrency(summary.sales))}
+            ${renderKpi("ACoS", formatPercent(summary.acos))}
+            ${renderKpi("ROAS", formatRoas(summary.roas))}
+          </div>
+          <div class="overview-share-grid">
+            ${renderOverviewShareBar("Spend share", spendShare)}
+            ${renderOverviewShareBar("Sales share", salesShare)}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function buildAiRecommendations() {
@@ -1239,7 +1690,12 @@ function buildAiRecommendations() {
       .map((rule) => buildRecommendationFromRule(rule))
       .filter(Boolean);
     if (fromRules.length) {
-      return sortRecommendationsByPriority(fromRules);
+      const ownBrandAttribution = buildOwnBrandAsinAttributionRecommendation();
+      const brandedTermsAttribution = buildBrandedTermsAttributionRecommendation();
+      const merged = fromRules
+        .concat(ownBrandAttribution || [])
+        .concat(brandedTermsAttribution || []);
+      return sortRecommendationsByPriority(merged);
     }
   }
 
@@ -1262,6 +1718,18 @@ function buildAiRecommendations() {
       tag: "Strategy",
       disabled: true,
     },
+    {
+      title: "Own-Brand ASIN Attribution",
+      description: "Estimate sales and spend tied to own-brand ASIN traffic.",
+      tag: "Insight",
+      disabled: true,
+    },
+    {
+      title: "Branded Terms Attribution",
+      description: "Estimate SP + SB branded search contribution from configured brands.",
+      tag: "Insight",
+      disabled: true,
+    },
   ];
 
   if (!state.results?.adTypes) {
@@ -1272,10 +1740,14 @@ function buildAiRecommendations() {
   const spendRisk = buildSpendShareRiskRecommendation();
   const searchTermGold = buildSearchTermGoldRecommendation();
   const acosOptimization = buildAcosOptimizationRecommendation();
+  const ownBrandAttribution = buildOwnBrandAsinAttributionRecommendation();
+  const brandedTermsAttribution = buildBrandedTermsAttributionRecommendation();
 
   recommendations.push(spendRisk || fallback[0]);
   recommendations.push(searchTermGold || fallback[1]);
   recommendations.push(acosOptimization || fallback[2]);
+  recommendations.push(ownBrandAttribution || fallback[3]);
+  recommendations.push(brandedTermsAttribution || fallback[4]);
 
   return recommendations;
 }
@@ -1681,6 +2153,129 @@ function buildAcosOptimizationRecommendation() {
   };
 }
 
+function buildOwnBrandAsinAttributionRecommendation() {
+  const ownBrandAsins = collectOwnBrandAsinsFromProducts();
+  if (!ownBrandAsins.size) {
+    return null;
+  }
+
+  const matchedSearchRows = getSearchTermRows().filter((row) => {
+    const matches = extractAsinsFromText(row.customerSearchTerm || "");
+    return matches.some((asin) => ownBrandAsins.has(asin));
+  });
+  const matchedSdRows = getCampaignRows().filter((row) => {
+    if (row.adType !== "SD") {
+      return false;
+    }
+    const matches = extractAsinsFromSdTargetingExpression(
+      row.productTargetingExpression || ""
+    );
+    return matches.some((asin) => ownBrandAsins.has(asin));
+  });
+  const matchedRows = matchedSearchRows.concat(matchedSdRows);
+  if (!matchedRows.length) {
+    return null;
+  }
+
+  const summary = computeSummary(matchedRows);
+  const totalSpend = Number(state.accountTotals?.spend) || 0;
+  const totalSales = Number(state.accountTotals?.sales) || 0;
+  const spendShare = totalSpend > 0 ? summary.spend / totalSpend : 0;
+  const salesShare = totalSales > 0 ? summary.sales / totalSales : 0;
+
+  return {
+    title: "Own-Brand ASIN Attribution",
+    description:
+      `Estimated own-brand contribution: ${formatPercent(spendShare)} of spend and ` +
+      `${formatPercent(salesShare)} of sales ` +
+      `(${formatCurrency(summary.spend)} spend, ${formatCurrency(summary.sales)} sales). ` +
+      "Conservative estimate: ASIN list is sourced from SP/SD product rows only.",
+    tag: "Insight",
+    priority: "Medium",
+    target: {
+      section: "products",
+      adTypeFilter: "All",
+      viewMode: "table",
+    },
+  };
+}
+
+function buildBrandedTermsAttributionRecommendation() {
+  const brandAliases = dedupeBrandAliases(state.brandAliases).filter(Boolean);
+  if (!brandAliases.length) {
+    return null;
+  }
+
+  const normalizedAliases = brandAliases
+    .map((alias) => normalizeInsightText(alias))
+    .filter(Boolean);
+  if (!normalizedAliases.length) {
+    return null;
+  }
+
+  const brandedRows = getSearchTermRows().filter((row) => {
+    if (!["SP", "SB"].includes(row.adType)) {
+      return false;
+    }
+    return isBrandedSearchTerm(row.customerSearchTerm, normalizedAliases);
+  });
+  if (!brandedRows.length) {
+    return null;
+  }
+
+  const summary = computeSummary(brandedRows);
+  const spTotals = state.results?.adTypes?.SP?.summary || {};
+  const sbTotals = state.results?.adTypes?.SB?.summary || {};
+  const combinedSpend = Number(spTotals.spend || 0) + Number(sbTotals.spend || 0);
+  const combinedSales = Number(spTotals.sales || 0) + Number(sbTotals.sales || 0);
+  const spendShare = combinedSpend > 0 ? summary.spend / combinedSpend : 0;
+  const salesShare = combinedSales > 0 ? summary.sales / combinedSales : 0;
+
+  return {
+    title: "Branded Terms Attribution",
+    description:
+      `Estimated branded search contribution (SP + SB): ${formatPercent(spendShare)} of spend and ` +
+      `${formatPercent(salesShare)} of sales ` +
+      `(${formatCurrency(summary.spend)} spend, ${formatCurrency(summary.sales)} sales). ` +
+      "Approximate signal based on configured brand names; not all branded demand may be captured.",
+    tag: "Insight",
+    priority: "Medium",
+    target: {
+      section: "search-terms",
+      adTypeFilter: "All",
+      searchTermFilter: "terms",
+      viewMode: "table",
+    },
+  };
+}
+
+function collectOwnBrandAsinsFromProducts() {
+  const rows = getCampaignRows().filter((row) => isProductsPageRow(row));
+  const set = new Set();
+  rows.forEach((row) => {
+    const asin = normalizeAsin(row.advertisedAsin || row.asinTarget || "");
+    if (asin) {
+      set.add(asin);
+    }
+  });
+  return set;
+}
+
+function normalizeInsightText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isBrandedSearchTerm(term, normalizedAliases) {
+  const normalizedTerm = normalizeInsightText(term);
+  if (!normalizedTerm) {
+    return false;
+  }
+  return normalizedAliases.some((alias) => normalizedTerm.includes(alias));
+}
+
 function renderAiRecommendationsHub(useGrid) {
   const tilesClass = useGrid ? "ai-tiles ai-tiles-grid" : "ai-tiles";
   const recommendations = buildAiRecommendations();
@@ -1711,7 +2306,7 @@ function renderAiRecommendationsHub(useGrid) {
   return `
     <div class="card ai-spotlight">
       <div class="row space-between">
-        <strong>Insights Hub</strong>
+        <strong>Priority Insights</strong>
         <span class="chip">Priority Insights</span>
       </div>
       <p class="muted">
@@ -2628,17 +3223,45 @@ function parseJsonArray(text) {
 }
 
 function attachOverviewHandlers() {
-  workspaceContent.querySelectorAll("[data-insight]").forEach((card) => {
-    card.addEventListener("click", () => {
-      state.ui.selectedEntity = {
-        label: card.dataset.insight,
-        type: "Insight",
-      };
-      state.ui.inspectorOpen = true;
-      state.ui.inspectorDismissed = false;
-      renderInspector();
+  workspaceContent.querySelectorAll("[data-overview-adtype]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const adType = button.dataset.overviewAdtype;
+      if (!adType) {
+        return;
+      }
+      state.ui.overviewAdType = adType;
+      renderWorkspaceContent();
     });
   });
+  workspaceContent.querySelectorAll("[data-overview-target-index]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const label = row.dataset.overviewTargetLabel || "";
+      const section = row.dataset.overviewTargetSection || "match-keywords";
+      const adType = row.dataset.overviewTargetAdtype || "";
+      if (!label) {
+        return;
+      }
+      applyRecommendationTarget({
+        section,
+        viewMode: "table",
+        searchQuery: label,
+        adTypeFilter: adType || undefined,
+      });
+    });
+  });
+  workspaceContent.querySelectorAll("[data-overview-asin]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const asin = row.dataset.overviewAsin || "";
+      const baseUrl = getAmazonMarketplaceBaseUrl();
+      if (!asin || !baseUrl) {
+        return;
+      }
+      window.open(`${baseUrl}/dp/${encodeURIComponent(asin)}`, "_blank", "noopener,noreferrer");
+    });
+  });
+}
+
+function attachInsightsHubHandlers() {
   attachAiRecommendationHandlers();
   attachActionPlanHandlers(workspaceContent);
 }
@@ -2790,6 +3413,10 @@ function buildGroupEntities(sectionConfig) {
       detailAdType,
       detailKey
     );
+    const resolvedDetails =
+      sectionConfig.key === "products"
+        ? buildCampaignDetailsFromRows(items, "Campaigns for this ASIN")
+        : details;
     return {
       id: `${sectionConfig.key}:${key}`,
       label,
@@ -2797,7 +3424,7 @@ function buildGroupEntities(sectionConfig) {
       adType: items[0]?.adType || "",
       count: items.length,
       summary,
-      details,
+      details: resolvedDetails,
       spendSharePct: totalSpend ? summary.spend / totalSpend : null,
       salesSharePct: totalSales ? summary.sales / totalSales : null,
     };
@@ -2942,6 +3569,30 @@ function buildTableEntities(sectionConfig) {
       raw: row,
     }));
   }
+  const isMatchSubSection =
+    sectionConfig.key.startsWith("match-") && sectionConfig.key !== "match-types";
+  if (isMatchSubSection && state.ui.matchRowMode === "instances") {
+    const rows = applyAdTypeFilter(filterRowsBySection(sectionConfig));
+    return rows.map((row, index) => {
+      const key = sectionConfig.groupKey(row);
+      const label = sectionConfig.groupLabel(row, key, [row]);
+      return {
+        id: `${sectionConfig.key}:instance:${index}`,
+        label,
+        type: sectionConfig.entityLabel,
+        adType: row.adType,
+        summary: computeSummary([row]),
+        spendSharePct: state.accountTotals?.spend
+          ? row.spend / state.accountTotals.spend
+          : null,
+        salesSharePct: state.accountTotals?.sales
+          ? row.sales / state.accountTotals.sales
+          : null,
+        details: buildCampaignDetailsFromRows([row], "Campaign for this instance"),
+        raw: row,
+      };
+    });
+  }
   const groups = buildGroupEntities(sectionConfig);
   return groups.map((group) => ({ ...group }));
 }
@@ -2959,6 +3610,7 @@ function renderGroupCards(groups) {
       "match-related",
       "search-terms",
       "negative-keywords",
+      "products",
     ]);
     const message = dataEmptySections.has(state.ui.activeSection)
       ? `No data for ${adType} found.`
@@ -3008,6 +3660,7 @@ function renderTable(rows) {
       "match-related",
       "search-terms",
       "negative-keywords",
+      "products",
     ]);
     const message = dataEmptySections.has(state.ui.activeSection)
       ? `No data for ${adType} found.`
@@ -3032,6 +3685,7 @@ function renderTable(rows) {
   const isSearchTerms = state.ui.activeSection === "search-terms";
   const isMatchTypes = state.ui.activeSection === "match-types";
   const isPlacements = state.ui.activeSection === "placements";
+  const isProducts = state.ui.activeSection === "products";
   const clickOnlySectionKeys = new Set(["campaigns", "ad-groups"]);
   const detailedMetricSectionKeys = new Set([
     "match-keywords",
@@ -3058,12 +3712,14 @@ function renderTable(rows) {
     isSearchTerms ||
     isMatchTypes ||
     isPlacements ||
+    isProducts ||
     detailedMetricSectionKeys.has(state.ui.activeSection);
   const showCpc =
-    isSearchTerms || isMatchTypes || isPlacements || detailedMetricSectionKeys.has(state.ui.activeSection);
+    isSearchTerms || isMatchTypes || isPlacements || isProducts || detailedMetricSectionKeys.has(state.ui.activeSection);
   const showCopyIcon =
     state.ui.activeSection !== "match-types" &&
-    state.ui.activeSection !== "placements";
+    state.ui.activeSection !== "placements" &&
+    state.ui.activeSection !== "products";
   const columnCount =
     8 + (showClicks ? 1 : 0) + (showCpc ? 1 : 0) + (showShareColumns ? 2 : 0) + (isMatchTypes ? 1 : 0);
   const body = visible
@@ -3141,7 +3797,8 @@ function renderTable(rows) {
   const hasMore = visible.length < sorted.length;
   const hidePrimaryRowCount =
     state.ui.activeSection === "match-types" ||
-    state.ui.activeSection === "placements";
+    state.ui.activeSection === "placements" ||
+    state.ui.activeSection === "products";
   const footerCountText = hidePrimaryRowCount
     ? ""
     : `Showing ${visible.length} of ${sorted.length} rows`;
@@ -3620,6 +4277,23 @@ function getSectionConfig(sectionKey) {
       allowViewToggle: false,
       defaultView: "groups",
     },
+    "insights-hub": {
+      key: "insights-hub",
+      title: "Insights Hub",
+      allowViewToggle: false,
+      defaultView: "groups",
+    },
+    products: {
+      ...base,
+      key: "products",
+      title: "Products",
+      entityLabel: "ASIN",
+      allowViewToggle: false,
+      defaultView: "table",
+      groupKey: (row) => row.advertisedAsin || row.asinTarget || "Unmapped",
+      groupLabel: (_row, key) => key || "Unmapped",
+      listMode: "groups",
+    },
     campaigns: {
       ...base,
       key: "campaigns",
@@ -3819,9 +4493,47 @@ function filterRowsBySection(sectionConfig) {
       });
     case "placements":
       return campaignRows.filter((row) => row.placement);
+    case "products":
+      return campaignRows.filter((row) => isProductsPageRow(row));
     default:
       return campaignRows;
   }
+}
+
+function isProductsPageRow(row) {
+  if (!row || !["SP", "SD"].includes(row.adType)) {
+    return false;
+  }
+  const entity = String(row.entityNormalized || "").toLowerCase();
+  const isProductAd = entity === "product ad" || (row.adType === "SD" && entity === "ad");
+  return isProductAd && Boolean(normalizeAsin(row.advertisedAsin || row.asinTarget || ""));
+}
+
+function normalizeAsin(value) {
+  const text = String(value || "").trim().toUpperCase();
+  return /^B0[A-Z0-9]{8}$/.test(text) ? text : "";
+}
+
+function extractAsinsFromText(value) {
+  const text = String(value || "").toUpperCase();
+  const matches = text.match(/\bB0[A-Z0-9]{8}\b/g) || [];
+  return [...new Set(matches.map((asin) => normalizeAsin(asin)).filter(Boolean))];
+}
+
+function extractAsinsFromSdTargetingExpression(value) {
+  const text = String(value || "");
+  const matches = [];
+  const regex = /asin\s*=\s*"?(B0[A-Z0-9]{8})"?/gi;
+  let result = regex.exec(text);
+  while (result) {
+    const asin = normalizeAsin(result[1]);
+    if (asin) {
+      matches.push(asin);
+    }
+    result = regex.exec(text);
+  }
+  const fallback = extractAsinsFromText(text);
+  return [...new Set(matches.concat(fallback))];
 }
 
 function applyAdTypeFilter(rows) {
@@ -3904,6 +4616,26 @@ function getCampaignLabelFromRows(rows) {
     return [...labels][0];
   }
   return "Multiple campaigns";
+}
+
+function buildCampaignDetailsFromRows(rows, title = "Campaigns") {
+  if (!rows?.length) {
+    return null;
+  }
+  const grouped = groupBy(rows, (row) => getCampaignKeyForRow(row) || "Unmapped");
+  const detailRows = Object.entries(grouped)
+    .map(([campaignKey, campaignRows]) => ({
+      label: getCampaignLabelFromRows(campaignRows) || campaignKey,
+      ...computeDetailMetricsFromRows(campaignRows),
+    }))
+    .sort((a, b) => (b.spend || 0) - (a.spend || 0));
+  if (!detailRows.length) {
+    return null;
+  }
+  return {
+    title,
+    rows: detailRows,
+  };
 }
 
 function getCampaignKeyForRow(row) {
@@ -3990,6 +4722,229 @@ function renderKpi(label, value) {
     <div class="kpi">
       <div class="muted">${label}</div>
       <strong>${value}</strong>
+    </div>
+  `;
+}
+
+function renderOverviewShareBar(label, value) {
+  const safeValue = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  return `
+    <div class="share-row">
+      <div class="row space-between">
+        <span class="muted">${label}</span>
+        <strong>${formatPercent(safeValue)}</strong>
+      </div>
+      <div class="share-track" aria-hidden="true">
+        <span class="share-fill" style="--share:${safeValue.toFixed(4)}"></span>
+      </div>
+    </div>
+  `;
+}
+
+function getOverviewSelectedAdType(adTypes = []) {
+  const options = adTypes.filter((adType) => ["SP", "SB", "SD"].includes(adType));
+  if (!options.length) {
+    return "SP";
+  }
+  if (options.includes(state.ui.overviewAdType)) {
+    return state.ui.overviewAdType;
+  }
+  if (options.includes("SP")) {
+    return "SP";
+  }
+  return options[0];
+}
+
+function buildOverviewCounts(adType) {
+  const rows = getCampaignRows().filter((row) => row.adType === adType);
+  const byEntity = (entity) =>
+    rows.filter((row) => row.entityNormalized === entity);
+  const productTargets = byEntity("product targeting");
+  const unique = (items, resolver) =>
+    new Set(
+      items
+        .map((item) => String(resolver(item) || "").trim())
+        .filter(Boolean)
+    ).size;
+  return {
+    campaigns: unique(byEntity("campaign"), (row) => row.campaignKey || row.campaignName || row.campaignId),
+    keywords: unique(byEntity("keyword"), (row) => row.keywordText),
+    asins: unique(
+      productTargets.filter((row) => row.matchType === "ASINs"),
+      (row) => row.asinTarget || row.productTargetingExpression
+    ),
+    asinsExpanded: unique(
+      productTargets.filter((row) => row.matchType === "ASINs Expanded"),
+      (row) => row.asinTarget || row.productTargetingExpression
+    ),
+    auto: unique(
+      productTargets.filter((row) => row.matchType === "Auto"),
+      (row) => row.productTargetingExpression || row.matchType
+    ),
+    category: unique(
+      productTargets.filter((row) => row.matchType === "Category"),
+      (row) => row.productTargetingExpression
+    ),
+  };
+}
+
+function buildOverviewTopTargets(adType, metricKey) {
+  const targetRows = getCampaignRows().filter(
+    (row) =>
+      row.adType === adType &&
+      ["keyword", "product targeting"].includes(row.entityNormalized)
+  );
+  return targetRows
+    .map((row, index) => {
+      const label = getTargetLabelForRow(row);
+      const section = getMatchSectionKey(row);
+      if (!label || !section) {
+        return null;
+      }
+      return {
+        id: `${adType}:${section}:${index}`,
+        label,
+        section,
+        campaignLabel: row.campaignName || row.campaignId || "",
+        summary: computeSummary([row]),
+      };
+    })
+    .filter(Boolean)
+    .filter((entry) => (entry.summary?.[metricKey] || 0) > 0)
+    .sort((a, b) => (b.summary?.[metricKey] || 0) - (a.summary?.[metricKey] || 0))
+    .slice(0, 5);
+}
+
+function buildTopProductsBySales(limit = 5) {
+  const rows = getCampaignRows().filter((row) => isProductsPageRow(row));
+  const grouped = groupBy(rows, (row) =>
+    normalizeAsin(row.advertisedAsin || row.asinTarget || "")
+  );
+  return Object.entries(grouped)
+    .filter(([asin]) => Boolean(asin))
+    .map(([asin, productRows]) => ({
+      asin,
+      summary: computeSummary(productRows),
+    }))
+    .sort((a, b) => (b.summary?.sales || 0) - (a.summary?.sales || 0))
+    .slice(0, limit);
+}
+
+function renderTopProductsBySalesList(products) {
+  const hasAsinLinks = Boolean(getAmazonMarketplaceBaseUrl());
+  if (!products?.length) {
+    return `<p class="muted">No SP/SD product sales found yet.</p>`;
+  }
+  const rows = products
+    .map(
+      (item, index) => `
+        <tr ${hasAsinLinks ? `class="overview-target-row" data-overview-asin="${escapeHtml(item.asin)}"` : ""}>
+          <td>
+            <div class="overview-target-label">
+              <span class="chip overview-rank">${index + 1}</span>
+              <span>${escapeHtml(item.asin)}</span>
+            </div>
+          </td>
+          <td class="num">${formatCurrency(item.summary.spend)}</td>
+          <td class="num overview-highlight">${formatCurrency(item.summary.sales)}</td>
+          <td class="num">${formatPercent(item.summary.acos)}</td>
+          <td class="num">${formatRoas(item.summary.roas)}</td>
+        </tr>
+      `
+    )
+    .join("");
+  return `
+    <div class="table-wrap overview-target-table-wrap">
+      <table class="overview-target-table">
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th class="num">Spend</th>
+            <th class="num">Sales</th>
+            <th class="num">ACoS</th>
+            <th class="num">ROAS</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function getAmazonMarketplaceBaseUrl() {
+  const currency = String(state.currencyCode || "").toUpperCase();
+  if (currency === "GBP") {
+    return "https://www.amazon.co.uk";
+  }
+  if (currency === "USD") {
+    return "https://www.amazon.com";
+  }
+  return "";
+}
+
+function renderOverviewCountMetric(label, value) {
+  return `
+    <div class="overview-count-item">
+      <div class="muted">${escapeHtml(label)}</div>
+      <strong>${formatNumber(value)}</strong>
+    </div>
+  `;
+}
+
+function renderOverviewTargetList(items, highlightMetric) {
+  if (!items.length) {
+    return `<p class="muted">No target data available for this ad type.</p>`;
+  }
+  const selectedAdType = getOverviewSelectedAdType(
+    Object.keys(state.results?.adTypes || {})
+  );
+  const rows = items
+    .map((item, index) => {
+      const summary = item.summary || {};
+      const jumpSection = item.section || "match-keywords";
+      return `
+        <tr
+          class="overview-target-row"
+          data-overview-target-index="${index}"
+          data-overview-target-label="${escapeHtml(item.label)}"
+          data-overview-target-section="${escapeHtml(jumpSection)}"
+          data-overview-target-adtype="${escapeHtml(selectedAdType)}"
+        >
+          <td>
+            <div class="name-stack">
+              <span class="overview-target-label">
+                <span class="chip overview-rank">${index + 1}</span>
+                <span>${escapeHtml(item.label)}</span>
+              </span>
+              ${
+                item.campaignLabel
+                  ? `<span class="chip campaign-chip">${escapeHtml(item.campaignLabel)}</span>`
+                  : ""
+              }
+            </div>
+          </td>
+          <td class="num ${highlightMetric === "spend" ? "overview-highlight" : ""}">${formatCurrency(summary.spend)}</td>
+          <td class="num ${highlightMetric === "sales" ? "overview-highlight" : ""}">${formatCurrency(summary.sales)}</td>
+          <td class="num">${formatPercent(summary.acos)}</td>
+          <td class="num">${formatRoas(summary.roas)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+  return `
+    <div class="table-wrap overview-target-table-wrap">
+      <table class="overview-target-table">
+        <thead>
+          <tr>
+            <th>Target</th>
+            <th class="num">Spend</th>
+            <th class="num">Sales</th>
+            <th class="num">ACoS</th>
+            <th class="num">ROAS</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
   `;
 }

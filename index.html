@@ -52,6 +52,26 @@
                 </svg>
               </span>
             </button>
+            <button class="nav-item" data-section="insights-hub">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 18h4v-6H4z" />
+                  <path d="M10 18h4V8h-4z" />
+                  <path d="M16 18h4V4h-4z" />
+                </svg>
+              </span>
+              <span class="nav-label">Insights Hub</span>
+            </button>
+            <button class="nav-item" data-section="products">
+              <span class="nav-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <rect x="4" y="6" width="16" height="12" rx="2" />
+                  <path d="M9 10h6" />
+                  <path d="M9 14h4" />
+                </svg>
+              </span>
+              <span class="nav-label">Products</span>
+            </button>
             <button class="nav-item" data-section="campaigns">
               <span class="nav-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -196,7 +216,14 @@
                 </div>
                 <div class="view-toggle">
                   <button class="view-btn active" data-view="groups">Grouped</button>
-                  <button class="view-btn" data-view="table">All</button>
+                  <button class="view-btn" data-view="table">Totals</button>
+                </div>
+                <div class="filter-group" id="match-row-mode-wrap">
+                  <label class="muted" for="match-row-mode">Rows</label>
+                  <select id="match-row-mode">
+                    <option value="totals">Totals</option>
+                    <option value="instances">Instances</option>
+                  </select>
                 </div>
                 <div class="filter-group" id="adtype-filter-wrap">
                   <label class="muted" for="adtype-filter">Ad type</label>
@@ -296,7 +323,34 @@
           <div id="file-warning" class="muted"></div>
         </div>
         <div class="modal-footer">
-          <button id="upload-create" class="btn primary">Create session</button>
+          <button id="upload-create" class="btn primary">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="brand-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Brand Names</h3>
+          <button id="brand-close" class="btn ghost icon" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="muted">
+            Confirm the brand names we’ll use to estimate branded search performance. Add or remove names before creating the session.
+          </p>
+          <div id="upload-brand-list" class="upload-brand-list"></div>
+          <div class="muted">
+            If no brands are present, add your brands manually below:
+          </div>
+          <div class="row upload-brand-row">
+            <input id="upload-brand-input" type="text" placeholder="e.g. Chaos Club" />
+            <button id="upload-brand-add" class="btn ghost" type="button" aria-label="Add brand">+</button>
+          </div>
+          <div id="upload-brand-note" class="muted upload-brand-note"></div>
+        </div>
+        <div class="modal-footer">
+          <button id="brand-back" class="btn ghost" type="button">Back</button>
+          <button id="brand-confirm" class="btn primary" type="button">Create session</button>
         </div>
       </div>
     </div>
