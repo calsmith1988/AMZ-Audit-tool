@@ -95,7 +95,10 @@ export const FIELD_DEFS = [
 export const DEFAULT_BUCKETS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 export function getEffectiveSheetDefs(sheetData, sheetDefs) {
-  const hasSbMulti = Boolean(sheetData["SB Multi Ad Group Campaigns"]);
+  const sbMultiKey = normalizeKey("SB Multi Ad Group Campaigns");
+  const hasSbMulti = Object.keys(sheetData || {}).some(
+    (sheetName) => normalizeKey(sheetName) === sbMultiKey
+  );
   return sheetDefs.filter((def) => {
     if (def.name === "Sponsored Brands campaigns" && hasSbMulti) {
       return false;

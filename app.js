@@ -1007,7 +1007,9 @@ function renderMappingPanel() {
   }
 
   const supportedNames = new Set(
-    getEffectiveSheetDefs(state.sheetData, SHEET_DEFS).map((def) => def.name)
+    getEffectiveSheetDefs(state.sheetData, SHEET_DEFS)
+      .map((def) => resolveSheetNameForDef(def, state.sheetData))
+      .filter(Boolean)
   );
   const visibleEntries = sheetEntries.filter(([name]) =>
     supportedNames.has(name)
@@ -1144,15 +1146,20 @@ function recompute() {
   const datasets = [];
   const effectiveDefs = getEffectiveSheetDefs(state.sheetData, SHEET_DEFS);
   effectiveDefs.forEach((def) => {
-    const sheet = state.sheetData[def.name];
+    const sheetName = resolveSheetNameForDef(def, state.sheetData);
+    if (!sheetName) {
+      return;
+    }
+    const sheet = state.sheetData[sheetName];
     if (!sheet) {
       return;
     }
-    const mapping = state.mappingSelections[def.name] || {};
+    const mapping =
+      state.mappingSelections[sheetName] || state.mappingSelections[def.name] || {};
     const missing = REQUIRED_FIELDS.filter((field) => !mapping[field]);
     if (missing.length) {
       health.push({
-        sheet: def.name,
+        sheet: sheetName,
         missing,
       });
     }
@@ -1585,6 +1592,9 @@ function renderOverview() {
   const counts = buildOverviewCounts(selectedAdType);
   const topSalesTargets = buildOverviewTopTargets(selectedAdType, "sales");
   const topSpendTargets = buildOverviewTopTargets(selectedAdType, "spend");
+  const zeroSaleSpend = buildOverviewZeroSaleSpend();
+  const searchTermRatio = buildOverviewUntargetedSearchTermRatio();
+  const topMatchTypesBySales = buildOverviewTopMatchTypesBySales(3);
   const adTypeTabs = adTypes
     .map((adType) => {
       const activeClass = adType === selectedAdType ? "active" : "";
@@ -1634,6 +1644,48 @@ function renderOverview() {
           <span class="chip">${escapeHtml(selectedAdType)}</span>
         </div>
         ${renderOverviewTargetList(topSpendTargets, "spend")}
+      </div>
+      <div class="card overview-panel">
+        <div class="row space-between overview-panel-header">
+          <strong>Zero-Sale Spend</strong>
+          <span class="chip">Campaigns</span>
+        </div>
+        <div class="kpi-grid overview-kpi-grid">
+          ${renderKpi("Spend", formatCurrency(zeroSaleSpend.totalSpend))}
+          ${renderKpi("Ad Types", formatNumber(zeroSaleSpend.byAdType.length))}
+        </div>
+        ${
+          zeroSaleSpend.byAdType.length
+            ? `<div class="row overview-chip-row">${zeroSaleSpend.byAdType
+                .map(
+                  (entry) =>
+                    `<span class="chip">${escapeHtml(entry.adType)} ${formatCurrency(entry.spend)}</span>`
+                )
+                .join("")}</div>`
+            : `<p class="muted">No campaign zero-sale spend found.</p>`
+        }
+      </div>
+      <div class="card overview-panel">
+        <div class="row space-between overview-panel-header">
+          <strong>Search Term to Target Ratio</strong>
+          <span class="chip">SP + SB</span>
+        </div>
+        <div class="kpi-grid overview-kpi-grid">
+          ${renderKpi("Ratio", formatPercent(searchTermRatio.ratio))}
+          ${renderKpi("Untargeted Sales", formatCurrency(searchTermRatio.untargetedSales))}
+        </div>
+        <p class="muted">
+          Untargeted search-term sales (${formatCurrency(
+            searchTermRatio.untargetedSales
+          )}) / total account sales (${formatCurrency(searchTermRatio.totalSales)}).
+        </p>
+      </div>
+      <div class="card overview-panel">
+        <div class="row space-between overview-panel-header">
+          <strong>Top Match Types by Sales</strong>
+          <span class="chip">Top 3</span>
+        </div>
+        ${renderOverviewTopMatchTypesList(topMatchTypesBySales)}
       </div>
     </div>
   `;
@@ -4815,6 +4867,66 @@ function buildOverviewTopTargets(adType, metricKey) {
     .slice(0, 5);
 }
 
+function buildOverviewZeroSaleSpend() {
+  const byAdType = [];
+  Object.entries(state.results?.adTypes || {}).forEach(([adType, data]) => {
+    const zeroSalesBucket = (data?.campaignBuckets || []).find(
+      (bucket) => bucket?.bucket === "No Sales"
+    );
+    const spend = Number(zeroSalesBucket?.spend || 0);
+    if (spend > 0) {
+      byAdType.push({ adType, spend });
+    }
+  });
+  byAdType.sort((a, b) => b.spend - a.spend);
+  const totalSpend = byAdType.reduce((sum, item) => sum + item.spend, 0);
+  return { totalSpend, byAdType };
+}
+
+function buildOverviewUntargetedSearchTermRatio() {
+  const byAdType = [];
+  Object.entries(state.results?.adTypes || {}).forEach(([adType, data]) => {
+    const insights = data?.searchTermInsights;
+    if (!insights) {
+      return;
+    }
+    const untargetedSales = []
+      .concat(insights.uniqueKeywords || [])
+      .concat(insights.uniqueAsins || [])
+      .reduce((sum, item) => sum + Number(item?.sales || 0), 0);
+    if (untargetedSales > 0) {
+      byAdType.push({ adType, untargetedSales });
+    }
+  });
+  const untargetedSales = byAdType.reduce((sum, item) => sum + item.untargetedSales, 0);
+  const totalSales = Number(state.accountTotals?.sales || 0);
+  const ratio = totalSales > 0 ? untargetedSales / totalSales : null;
+  return { ratio, untargetedSales, totalSales, byAdType };
+}
+
+function buildOverviewTopMatchTypesBySales(limit = 3) {
+  const grouped = new Map();
+  Object.values(state.results?.adTypes || {}).forEach((data) => {
+    (data?.matchTypeBuckets || []).forEach((item) => {
+      const matchType = String(item?.matchType || "Unmapped").trim() || "Unmapped";
+      if (!grouped.has(matchType)) {
+        grouped.set(matchType, {
+          matchType,
+          sales: 0,
+          spend: 0,
+        });
+      }
+      const entry = grouped.get(matchType);
+      entry.sales += Number(item?.sales || 0);
+      entry.spend += Number(item?.spend || 0);
+    });
+  });
+  return Array.from(grouped.values())
+    .filter((item) => item.sales > 0 || item.spend > 0)
+    .sort((a, b) => b.sales - a.sales)
+    .slice(0, limit);
+}
+
 function buildTopProductsBySales(limit = 5) {
   const rows = getCampaignRows().filter((row) => isProductsPageRow(row));
   const grouped = groupBy(rows, (row) =>
@@ -4863,6 +4975,44 @@ function renderTopProductsBySalesList(products) {
             <th class="num">Sales</th>
             <th class="num">ACoS</th>
             <th class="num">ROAS</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderOverviewTopMatchTypesList(items) {
+  if (!items?.length) {
+    return `<p class="muted">No match type sales data available yet.</p>`;
+  }
+  const rows = items
+    .map(
+      (item, index) => `
+        <tr>
+          <td>
+            <span class="overview-target-label">
+              <span class="chip overview-rank">${index + 1}</span>
+              <span>${escapeHtml(item.matchType)}</span>
+            </span>
+          </td>
+          <td class="num">${formatCurrency(item.sales)}</td>
+          <td class="num">${formatCurrency(item.spend)}</td>
+          <td class="num">${formatPercent(item.sales ? item.spend / item.sales : null)}</td>
+        </tr>
+      `
+    )
+    .join("");
+  return `
+    <div class="table-wrap overview-target-table-wrap">
+      <table class="overview-target-table">
+        <thead>
+          <tr>
+            <th>Match Type</th>
+            <th class="num">Sales</th>
+            <th class="num">Spend</th>
+            <th class="num">ACoS</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -5022,6 +5172,22 @@ function detectCurrencyCodeFromSheetData(sheetData, mappingSelections = {}) {
   }
 
   return "GBP";
+}
+
+function resolveSheetNameForDef(def, sheetData) {
+  const expectedName = String(def?.name || "").trim();
+  if (!expectedName) {
+    return "";
+  }
+  if (sheetData?.[expectedName]) {
+    return expectedName;
+  }
+  const expectedNormalized = normalizeHeaderKey(expectedName);
+  return (
+    Object.keys(sheetData || {}).find(
+      (sheetName) => normalizeHeaderKey(sheetName) === expectedNormalized
+    ) || ""
+  );
 }
 
 function isPortfolioSheetName(sheetName) {
