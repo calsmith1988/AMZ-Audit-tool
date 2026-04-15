@@ -4,6 +4,7 @@ import {
   buildAutoMapping,
   buildAuditResults,
   getEffectiveSheetDefs,
+  normalizeValue,
   normalizeRow,
 } from "./audit.js";
 import { requestAuditSummaries, requestChatResponse } from "./ai.js";
@@ -13,6 +14,7 @@ const AD_TYPE_OPTIONS = ["All", "SP", "SB", "SD"];
 const AI_CHAT_MAX_CONTEXT_CHARS = 60000;
 const AI_CHAT_MAX_HISTORY = 10;
 const ACTION_PLAN_MAX_ITEMS = 20;
+const ASIN_LABEL_STORAGE_KEY = "amazon-audit-tool.asin-labels";
 
 const state = {
   sessions: [],
@@ -23,6 +25,7 @@ const state = {
   results: null,
   datasets: [],
   brandAliases: [],
+  asinLabels: loadAsinLabels(),
   currencyCode: "GBP",
   accountTotals: null,
   health: [],
@@ -446,6 +449,7 @@ function createSessionFromState(meta) {
     results: state.results,
     datasets: state.datasets,
     brandAliases: dedupeBrandAliases(meta.brandAliases || state.brandAliases),
+    asinLabels: { ...state.asinLabels },
     currencyCode: state.currencyCode,
     accountTotals: state.accountTotals,
     health: state.health,
@@ -1189,6 +1193,76 @@ function recompute() {
   renderApp();
 }
 
+function loadAsinLabels() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(ASIN_LABEL_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.entries(parsed).reduce((acc, [asin, label]) => {
+      const normalizedAsin = normalizeAsin(asin);
+      const normalizedLabel = normalizeAsinLabel(label);
+      if (!normalizedAsin || !normalizedLabel) {
+        return acc;
+      }
+      acc[normalizedAsin] = normalizedLabel;
+      return acc;
+    }, {});
+  } catch (_error) {
+    return {};
+  }
+}
+
+function normalizeAsinLabel(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function saveAsinLabels() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  try {
+    window.localStorage.setItem(
+      ASIN_LABEL_STORAGE_KEY,
+      JSON.stringify(state.asinLabels || {})
+    );
+  } catch (error) {
+    console.warn("Failed to save ASIN labels.", error);
+  }
+}
+
+function getAsinLabel(asin) {
+  const normalizedAsin = normalizeAsin(asin);
+  if (!normalizedAsin) {
+    return "";
+  }
+  return normalizeAsinLabel(state.asinLabels?.[normalizedAsin] || "");
+}
+
+function updateAsinLabel(asin, label) {
+  const normalizedAsin = normalizeAsin(asin);
+  if (!normalizedAsin) {
+    return false;
+  }
+  const nextLabel = normalizeAsinLabel(label);
+  const nextLabels = { ...(state.asinLabels || {}) };
+  if (nextLabel) {
+    nextLabels[normalizedAsin] = nextLabel;
+  } else {
+    delete nextLabels[normalizedAsin];
+  }
+  state.asinLabels = nextLabels;
+  saveAsinLabels();
+  return true;
+}
+
 function syncNav() {
   navItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.section === state.ui.activeSection);
@@ -1474,9 +1548,42 @@ function updateWorkspaceHeader() {
   if (noSalesFilterWrap) {
     noSalesFilterWrap.style.display = sectionConfig.key === "overview" ? "none" : "flex";
   }
-  if (noSalesFilter) {
-    noSalesFilter.value = state.ui.noSalesFilter;
+  syncPageFilterOptions(sectionConfig);
+}
+
+function getPageFilterOptions(sectionConfig) {
+  if (sectionConfig?.key === "search-terms") {
+    return [
+      { value: "all", label: "All" },
+      { value: "unique", label: "Unique only" },
+      { value: "no-sales", label: "Spend, no sales" },
+    ];
   }
+  return [
+    { value: "all", label: "All" },
+    { value: "no-sales", label: "Spend, no sales" },
+  ];
+}
+
+function syncPageFilterOptions(sectionConfig) {
+  if (!noSalesFilter) {
+    return;
+  }
+  const options = getPageFilterOptions(sectionConfig);
+  const allowedValues = new Set(options.map((option) => option.value));
+  if (!allowedValues.has(state.ui.noSalesFilter)) {
+    state.ui.noSalesFilter = "all";
+  }
+  const nextMarkup = options
+    .map(
+      (option) =>
+        `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`
+    )
+    .join("");
+  if (noSalesFilter.innerHTML !== nextMarkup) {
+    noSalesFilter.innerHTML = nextMarkup;
+  }
+  noSalesFilter.value = state.ui.noSalesFilter;
 }
 
 function renderTopbarMetrics() {
@@ -1633,14 +1740,14 @@ function renderOverview() {
       </div>
       <div class="card overview-panel">
         <div class="row space-between overview-panel-header">
-          <strong>Top 5 Sales Targets</strong>
+          <strong>Top 4 Sales Targets</strong>
           <span class="chip">${escapeHtml(selectedAdType)}</span>
         </div>
         ${renderOverviewTargetList(topSalesTargets, "sales")}
       </div>
       <div class="card overview-panel">
         <div class="row space-between overview-panel-header">
-          <strong>Top 5 Spend Targets</strong>
+          <strong>Top 4 Spend Targets</strong>
           <span class="chip">${escapeHtml(selectedAdType)}</span>
         </div>
         ${renderOverviewTargetList(topSpendTargets, "spend")}
@@ -3431,6 +3538,13 @@ function getDetailKeyForRow(sectionKey, row) {
 }
 
 function buildGroupEntities(sectionConfig) {
+  if (sectionConfig.key === "search-terms") {
+    return buildSearchTermGroupEntities({
+      adTypeFilter: state.ui.adTypeFilter,
+      searchTermFilter: state.ui.searchTermFilter,
+      noSalesFilter: state.ui.noSalesFilter,
+    });
+  }
   const rows = filterRowsBySection(sectionConfig);
   const filtered = applyAdTypeFilter(rows);
   const noSalesFiltered =
@@ -3451,7 +3565,7 @@ function buildGroupEntities(sectionConfig) {
   });
   const totalSpend = state.accountTotals?.spend || 0;
   const totalSales = state.accountTotals?.sales || 0;
-  return Object.entries(grouped).map(([key, items]) => {
+  const entities = Object.entries(grouped).map(([key, items]) => {
     const summary = computeSummary(items);
     const labelKey =
       state.ui.adTypeFilter === "All" ? stripAdTypePrefix(key) : key;
@@ -3469,11 +3583,14 @@ function buildGroupEntities(sectionConfig) {
       sectionConfig.key === "products"
         ? buildCampaignDetailsFromRows(items, "Campaigns for this ASIN")
         : details;
+    const asin = sectionConfig.key === "products" ? normalizeAsin(labelKey) : "";
     return {
       id: `${sectionConfig.key}:${key}`,
       label,
       type: sectionConfig.entityLabel,
       adType: items[0]?.adType || "",
+      asin,
+      asinLabel: asin ? getAsinLabel(asin) : "",
       count: items.length,
       summary,
       details: resolvedDetails,
@@ -3481,6 +3598,129 @@ function buildGroupEntities(sectionConfig) {
       salesSharePct: totalSales ? summary.sales / totalSales : null,
     };
   });
+  return entities;
+}
+
+function buildSearchTermGroupEntities({
+  adTypeFilter = "All",
+  searchTermFilter = "terms",
+  noSalesFilter = "all",
+} = {}) {
+  const rows = getSearchTermRows().filter((row) => {
+    const term = String(row.customerSearchTerm || "").trim();
+    if (!term) {
+      return false;
+    }
+    if (adTypeFilter !== "All" && row.adType !== adTypeFilter) {
+      return false;
+    }
+    const isAsin = term.toUpperCase().includes("B0");
+    return searchTermFilter === "asins" ? isAsin : !isAsin;
+  });
+  const filteredRows =
+    noSalesFilter === "no-sales"
+      ? rows.filter((row) => (row.spend || 0) > 0 && (row.sales || 0) === 0)
+      : rows;
+  if (!filteredRows.length) {
+    return [];
+  }
+  const searchTermTargetSets = buildSearchTermTargetSets();
+  const grouped = groupBy(filteredRows, (row) => {
+    const baseKey = normalizeValue(row.customerSearchTerm) || "unmapped";
+    if (adTypeFilter === "All") {
+      return `${row.adType || "All"}::${baseKey}`;
+    }
+    return baseKey;
+  });
+  const totalSpend = state.accountTotals?.spend || 0;
+  const totalSales = state.accountTotals?.sales || 0;
+  const entities = Object.entries(grouped).map(([key, items]) => {
+    const summary = computeSummary(items);
+    const label = getSearchTermGroupLabel(items);
+    const isTargeted = isSearchTermGroupTargeted(items, searchTermTargetSets);
+    return {
+      id: `search-terms:${key}`,
+      label,
+      type: "Search Term",
+      adType: items[0]?.adType || "",
+      count: items.length,
+      summary,
+      details: null,
+      isTargeted,
+      spendSharePct: totalSpend ? summary.spend / totalSpend : null,
+      salesSharePct: totalSales ? summary.sales / totalSales : null,
+    };
+  });
+  if (noSalesFilter === "unique") {
+    return entities.filter((item) => !item.isTargeted);
+  }
+  return entities;
+}
+
+function getSearchTermGroupLabel(rows) {
+  const sampleRow = rows?.[0];
+  if (!sampleRow) {
+    return "Search term";
+  }
+  const exact = rows.find(
+    (item) =>
+      String(item.customerSearchTerm || "").trim() ===
+      String(sampleRow.customerSearchTerm || "").trim()
+  );
+  return (
+    String(exact?.customerSearchTerm || sampleRow.customerSearchTerm || "").trim() ||
+    "Search term"
+  );
+}
+
+function buildSearchTermTargetSets() {
+  const targetsByAdType = new Map();
+  getCampaignRows().forEach((row) => {
+    const entity = String(row.entityNormalized || "").toLowerCase();
+    if (entity.includes("negative")) {
+      return;
+    }
+    const adType = row.adType || "All";
+    if (!targetsByAdType.has(adType)) {
+      targetsByAdType.set(adType, {
+        keywords: new Set(),
+        asins: new Set(),
+      });
+    }
+    const targets = targetsByAdType.get(adType);
+    const normalizedKeyword = normalizeValue(row.keywordText);
+    if (normalizedKeyword) {
+      targets.keywords.add(normalizedKeyword);
+    }
+    const directAsin = normalizeAsin(row.asinTarget || "");
+    if (directAsin) {
+      targets.asins.add(directAsin);
+    }
+    extractAsinsFromText(row.productTargetingExpression || "").forEach((asin) => {
+      targets.asins.add(asin);
+    });
+  });
+  return targetsByAdType;
+}
+
+function isSearchTermGroupTargeted(rows, targetSetsByAdType) {
+  const sampleRow = rows?.[0];
+  if (!sampleRow) {
+    return false;
+  }
+  const sampleTerm = String(sampleRow.customerSearchTerm || "").trim();
+  if (!sampleTerm) {
+    return false;
+  }
+  const targets = targetSetsByAdType?.get(sampleRow.adType || "All");
+  if (!targets) {
+    return false;
+  }
+  const asins = extractAsinsFromText(sampleTerm);
+  if (asins.length) {
+    return asins.some((asin) => targets.asins.has(asin));
+  }
+  return targets.keywords.has(normalizeValue(sampleTerm));
 }
 
 function buildBucketEntities(sectionConfig) {
@@ -3720,9 +3960,16 @@ function renderTable(rows) {
     return `<div class="card"><p class="muted">${escapeHtml(message)}</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
-  const baseFiltered = rows.filter((item) =>
-    item.label.toLowerCase().includes(search)
-  );
+  const isSearchTerms = state.ui.activeSection === "search-terms";
+  const isMatchTypes = state.ui.activeSection === "match-types";
+  const isPlacements = state.ui.activeSection === "placements";
+  const isProducts = state.ui.activeSection === "products";
+  const baseFiltered = rows.filter((item) => {
+    const matchesLabel = item.label.toLowerCase().includes(search);
+    const matchesAsinTag =
+      isProducts && String(item.asinLabel || "").toLowerCase().includes(search);
+    return matchesLabel || matchesAsinTag;
+  });
   const noSalesFiltered =
     state.ui.noSalesFilter === "no-sales"
       ? baseFiltered.filter(
@@ -3734,10 +3981,6 @@ function renderTable(rows) {
     ? state.ui.tableLimit
     : sorted.length;
   const visible = sorted.slice(0, limit);
-  const isSearchTerms = state.ui.activeSection === "search-terms";
-  const isMatchTypes = state.ui.activeSection === "match-types";
-  const isPlacements = state.ui.activeSection === "placements";
-  const isProducts = state.ui.activeSection === "products";
   const clickOnlySectionKeys = new Set(["campaigns", "ad-groups"]);
   const detailedMetricSectionKeys = new Set([
     "match-keywords",
@@ -3799,6 +4042,25 @@ function renderTable(rows) {
         state.ui.activeSection === "placements"
           ? formatPlacementTableLabel(label)
           : label;
+      const asinNameTag =
+        isProducts && item.asinLabel
+          ? `<span class="asin-name-tag">${escapeHtml(item.asinLabel)}</span>`
+          : "";
+      const editAsinButton =
+        isProducts && item.asin
+          ? `<button
+               class="asin-edit-btn"
+               type="button"
+               data-asin-edit="${escapeHtml(item.asin)}"
+               aria-label="Edit product name for ${escapeHtml(item.asin)}"
+               title="Edit product name"
+             >
+               <svg viewBox="0 0 24 24" aria-hidden="true">
+                 <path d="M12 20h9" />
+                 <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+               </svg>
+             </button>`
+          : "";
       const campaignLabel = isSearchTerms
         ? item.raw?.campaignName || item.raw?.campaignId || ""
         : "";
@@ -3821,10 +4083,18 @@ function renderTable(rows) {
             </span>
             <span class="chip campaign-chip">${escapeHtml(campaignLabel)}</span>
           </div>`
-        : `<span class="name-cell">
-            ${escapeHtml(displayLabel)}
-            ${copyButton}
-          </span>`;
+        : isProducts
+          ? `<div class="name-stack">
+              <span class="name-cell">
+                ${escapeHtml(displayLabel)}
+                ${editAsinButton}
+              </span>
+              ${asinNameTag}
+            </div>`
+          : `<span class="name-cell">
+              ${escapeHtml(displayLabel)}
+              ${copyButton}
+            </span>`;
       return `
         <tr class="${selected ? "selected" : ""}" data-entity="${item.id}">
           <td>
@@ -4192,6 +4462,31 @@ function attachGroupHandlers() {
 }
 
 function attachTableHandlers() {
+  workspaceContent.querySelectorAll("[data-asin-edit]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const asin = button.dataset.asinEdit || "";
+      if (!asin) {
+        return;
+      }
+      const currentLabel = getAsinLabel(asin);
+      const nextLabel = window.prompt(
+        `Enter a product name for ${asin}. Leave blank to remove the tag.`,
+        currentLabel
+      );
+      if (nextLabel === null) {
+        return;
+      }
+      if (!updateAsinLabel(asin, nextLabel)) {
+        return;
+      }
+      if (state.ui.selectedEntity?.id) {
+        state.ui.selectedEntity = findEntityById(state.ui.selectedEntity.id);
+      }
+      renderInspector();
+      renderWorkspaceContent();
+    });
+  });
   workspaceContent.querySelectorAll("[data-entity]").forEach((row) => {
     row.addEventListener("click", () => {
       const id = row.dataset.entity;
@@ -4455,8 +4750,19 @@ function getSectionConfig(sectionKey) {
       entityLabel: "Search Term",
       allowViewToggle: false,
       defaultView: "table",
-      listMode: "rows",
-      rowLabel: (row) => row.customerSearchTerm || "Search term",
+      listMode: "groups",
+      groupKey: (row) => normalizeValue(row.customerSearchTerm) || "unmapped",
+      groupLabel: (row, _key, items) => {
+        const exact = items.find(
+          (item) =>
+            String(item.customerSearchTerm || "").trim() ===
+            String(row.customerSearchTerm || "").trim()
+        );
+        return (
+          String(exact?.customerSearchTerm || row.customerSearchTerm || "").trim() ||
+          "Search term"
+        );
+      },
     },
     placements: {
       ...base,
@@ -4532,17 +4838,20 @@ function filterRowsBySection(sectionConfig) {
         return !isAsinLike(keywordText) && !isAsinLike(targetExpression);
       });
     case "search-terms":
-      return searchRows.filter((row) => {
-        const term = String(row.customerSearchTerm || "");
-        if (!term) {
-          return false;
-        }
-        const isAsin = term.toUpperCase().includes("B0");
-        if (state.ui.searchTermFilter === "asins") {
-          return isAsin;
-        }
-        return !isAsin;
-      });
+      {
+        const filteredRows = searchRows.filter((row) => {
+          const term = String(row.customerSearchTerm || "");
+          if (!term) {
+            return false;
+          }
+          const isAsin = term.toUpperCase().includes("B0");
+          if (state.ui.searchTermFilter === "asins") {
+            return isAsin;
+          }
+          return !isAsin;
+        });
+        return filteredRows;
+      }
     case "placements":
       return campaignRows.filter((row) => row.placement);
     case "products":
@@ -4864,7 +5173,7 @@ function buildOverviewTopTargets(adType, metricKey) {
     .filter(Boolean)
     .filter((entry) => (entry.summary?.[metricKey] || 0) > 0)
     .sort((a, b) => (b.summary?.[metricKey] || 0) - (a.summary?.[metricKey] || 0))
-    .slice(0, 5);
+    .slice(0, 4);
 }
 
 function buildOverviewZeroSaleSpend() {
@@ -4884,20 +5193,23 @@ function buildOverviewZeroSaleSpend() {
 }
 
 function buildOverviewUntargetedSearchTermRatio() {
-  const byAdType = [];
-  Object.entries(state.results?.adTypes || {}).forEach(([adType, data]) => {
-    const insights = data?.searchTermInsights;
-    if (!insights) {
-      return;
-    }
-    const untargetedSales = []
-      .concat(insights.uniqueKeywords || [])
-      .concat(insights.uniqueAsins || [])
-      .reduce((sum, item) => sum + Number(item?.sales || 0), 0);
-    if (untargetedSales > 0) {
-      byAdType.push({ adType, untargetedSales });
-    }
-  });
+  const byAdType = ["SP", "SB"]
+    .filter((adType) => Boolean(state.results?.adTypes?.[adType]))
+    .map((adType) => {
+      const untargetedSales =
+        buildSearchTermGroupEntities({
+          adTypeFilter: adType,
+          searchTermFilter: "terms",
+          noSalesFilter: "unique",
+        }).reduce((sum, item) => sum + Number(item?.summary?.sales || 0), 0) +
+        buildSearchTermGroupEntities({
+          adTypeFilter: adType,
+          searchTermFilter: "asins",
+          noSalesFilter: "unique",
+        }).reduce((sum, item) => sum + Number(item?.summary?.sales || 0), 0);
+      return untargetedSales > 0 ? { adType, untargetedSales } : null;
+    })
+    .filter(Boolean);
   const untargetedSales = byAdType.reduce((sum, item) => sum + item.untargetedSales, 0);
   const totalSales = Number(state.accountTotals?.sales || 0);
   const ratio = totalSales > 0 ? untargetedSales / totalSales : null;
@@ -4936,6 +5248,7 @@ function buildTopProductsBySales(limit = 5) {
     .filter(([asin]) => Boolean(asin))
     .map(([asin, productRows]) => ({
       asin,
+      asinLabel: getAsinLabel(asin),
       summary: computeSummary(productRows),
     }))
     .sort((a, b) => (b.summary?.sales || 0) - (a.summary?.sales || 0))
@@ -4954,7 +5267,14 @@ function renderTopProductsBySalesList(products) {
           <td>
             <div class="overview-target-label">
               <span class="chip overview-rank">${index + 1}</span>
-              <span>${escapeHtml(item.asin)}</span>
+              <div class="overview-target-text">
+                <span class="overview-target-primary">${escapeHtml(item.asin)}</span>
+                ${
+                  item.asinLabel
+                    ? `<span class="asin-name-tag">${escapeHtml(item.asinLabel)}</span>`
+                    : ""
+                }
+              </div>
             </div>
           </td>
           <td class="num">${formatCurrency(item.summary.spend)}</td>
