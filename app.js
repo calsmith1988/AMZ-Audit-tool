@@ -58,6 +58,7 @@ const state = {
     activeSection: "overview",
     overviewAdType: "SP",
     overviewAnimateOnLoad: true,
+    productsMode: "products",
     viewMode: "groups",
     searchQuery: "",
     sortKey: "spend",
@@ -128,6 +129,8 @@ const negativeFilter = document.getElementById("negative-filter");
 const negativeFilterWrap = document.getElementById("negative-filter-wrap");
 const campaignChipToggle = document.getElementById("campaign-chip-toggle");
 const campaignChipWrap = document.getElementById("campaign-chip-wrap");
+const productsModeWrap = document.getElementById("products-mode-wrap");
+const productsModeSelect = document.getElementById("products-mode");
 const noSalesFilter = document.getElementById("no-sales-filter");
 const noSalesFilterWrap = document.getElementById("no-sales-filter-wrap");
 
@@ -776,6 +779,15 @@ if (campaignChipToggle) {
     } else {
       state.ui.showCampaignChips = shouldShow;
     }
+    renderApp();
+  });
+}
+
+if (productsModeSelect) {
+  productsModeSelect.addEventListener("change", () => {
+    state.ui.productsMode =
+      productsModeSelect.value === "keywords" ? "keywords" : "products";
+    state.ui.selectedEntity = null;
     renderApp();
   });
 }
@@ -1538,6 +1550,12 @@ function updateWorkspaceHeader() {
   if (campaignChipWrap) {
     campaignChipWrap.style.display = showCampaignChipToggle ? "flex" : "none";
   }
+  if (productsModeWrap) {
+    productsModeWrap.style.display = isProductsSection ? "flex" : "none";
+  }
+  if (productsModeSelect) {
+    productsModeSelect.value = state.ui.productsMode === "keywords" ? "keywords" : "products";
+  }
   if (campaignChipToggle) {
     const isSearchTerms = sectionConfig.key === "search-terms";
     const isOn = isSearchTerms
@@ -1623,9 +1641,13 @@ function renderWorkspaceContent() {
   }
   if (sectionConfig.key === "products") {
     const tableRows = buildTableEntities(sectionConfig);
+    const productsIntro =
+      state.ui.productsMode === "keywords"
+        ? "Keyword attribution shows only direct keyword rows that already include an advertised ASIN."
+        : "Product-level aggregation is SP and SD only.";
     workspaceContent.innerHTML = `
       <div class="muted">
-        Product-level aggregation is SP and SD only.
+        ${escapeHtml(productsIntro)}
       </div>
       ${renderTable(tableRows)}
     `;
@@ -3538,6 +3560,12 @@ function getDetailKeyForRow(sectionKey, row) {
 }
 
 function buildGroupEntities(sectionConfig) {
+  if (sectionConfig.key === "products" && state.ui.productsMode === "keywords") {
+    return buildProductKeywordEntities({
+      adTypeFilter: state.ui.adTypeFilter,
+      noSalesFilter: state.ui.noSalesFilter,
+    });
+  }
   if (sectionConfig.key === "search-terms") {
     return buildSearchTermGroupEntities({
       adTypeFilter: state.ui.adTypeFilter,
@@ -3599,6 +3627,180 @@ function buildGroupEntities(sectionConfig) {
     };
   });
   return entities;
+}
+
+function isNegativeKeywordEntityRow(row) {
+  const entity = row.entityNormalized || normalizeValue(row.entity);
+  return (
+    entity === "campaign negative keyword" ||
+    entity === "negative keyword" ||
+    entity === "negative product targeting"
+  );
+}
+
+function isBiddableKeywordRow(row) {
+  if (!row || isNegativeKeywordEntityRow(row)) {
+    return false;
+  }
+  const ent = row.entityNormalized || normalizeValue(row.entity);
+  return ent === "keyword" && Boolean(String(row.keywordText || "").trim());
+}
+
+function productKeywordAdGroupKey(row) {
+  const campaign = String(row.campaignKey || row.campaignId || row.campaignName || "").trim();
+  const adGroup = String(row.adGroupId || row.adGroupName || "").trim();
+  return `${campaign}\t${adGroup}`;
+}
+
+function productKeywordCampaignKey(row) {
+  return String(row.campaignKey || row.campaignId || row.campaignName || "").trim();
+}
+
+function buildProductAdAsinIndexSets(rows) {
+  const byAdGroup = new Map();
+  const byCampaign = new Map();
+  for (const row of rows) {
+    if (!row || !["SP", "SD"].includes(row.adType)) {
+      continue;
+    }
+    if (!isProductsPageRow(row)) {
+      continue;
+    }
+    const asin = normalizeAsin(row.advertisedAsin || row.asinTarget || "");
+    if (!asin) {
+      continue;
+    }
+    const agKey = productKeywordAdGroupKey(row);
+    if (!byAdGroup.has(agKey)) {
+      byAdGroup.set(agKey, new Set());
+    }
+    byAdGroup.get(agKey).add(asin);
+    const cKey = productKeywordCampaignKey(row);
+    if (cKey) {
+      if (!byCampaign.has(cKey)) {
+        byCampaign.set(cKey, new Set());
+      }
+      byCampaign.get(cKey).add(asin);
+    }
+  }
+  const adGroupLists = new Map();
+  for (const [key, set] of byAdGroup) {
+    adGroupLists.set(key, [...set].sort());
+  }
+  const campaignLists = new Map();
+  for (const [key, set] of byCampaign) {
+    campaignLists.set(key, [...set].sort());
+  }
+  return { byAdGroup: adGroupLists, byCampaign: campaignLists };
+}
+
+function resolveAsinsForProductKeywordRow(row, index) {
+  const direct = normalizeAsin(row.advertisedAsin || "");
+  if (direct) {
+    return [direct];
+  }
+  const fromAdGroup = index.byAdGroup.get(productKeywordAdGroupKey(row));
+  if (fromAdGroup && fromAdGroup.length) {
+    return fromAdGroup;
+  }
+  const cKey = productKeywordCampaignKey(row);
+  if (cKey) {
+    const fromCampaign = index.byCampaign.get(cKey);
+    if (fromCampaign && fromCampaign.length) {
+      return fromCampaign;
+    }
+  }
+  return [];
+}
+
+function scaleNormalizedRowMetrics(row, factor) {
+  if (factor >= 0.999999) {
+    return row;
+  }
+  return {
+    ...row,
+    spend: (row.spend || 0) * factor,
+    sales: (row.sales || 0) * factor,
+    clicks: (row.clicks || 0) * factor,
+    orders: (row.orders || 0) * factor,
+    impressions: (row.impressions || 0) * factor,
+    units: (row.units || 0) * factor,
+  };
+}
+
+function expandRowsForProductKeywordAttribution(rows, index) {
+  const expanded = [];
+  for (const row of rows) {
+    const asins = resolveAsinsForProductKeywordRow(row, index);
+    if (!asins.length) {
+      continue;
+    }
+    const n = asins.length;
+    const factor = n > 1 ? 1 / n : 1;
+    for (const asin of asins) {
+      expanded.push({
+        ...scaleNormalizedRowMetrics(row, factor),
+        advertisedAsin: asin,
+      });
+    }
+  }
+  return expanded;
+}
+
+function buildProductKeywordEntities({
+  adTypeFilter = "All",
+  noSalesFilter = "all",
+} = {}) {
+  const campaignRows = getCampaignRows();
+  const asinIndex = buildProductAdAsinIndexSets(campaignRows);
+  const keywordRows = campaignRows.filter((row) => {
+    if (!row || !["SP", "SD"].includes(row.adType)) {
+      return false;
+    }
+    if (adTypeFilter !== "All" && row.adType !== adTypeFilter) {
+      return false;
+    }
+    return isBiddableKeywordRow(row);
+  });
+  const rows = expandRowsForProductKeywordAttribution(keywordRows, asinIndex);
+  const filteredRows =
+    noSalesFilter === "no-sales"
+      ? rows.filter((row) => (row.spend || 0) > 0 && (row.sales || 0) === 0)
+      : rows;
+  if (!filteredRows.length) {
+    return [];
+  }
+  const grouped = groupBy(filteredRows, (row) => {
+    const asin = normalizeAsin(row.advertisedAsin || "");
+    const keyword = normalizeValue(row.keywordText);
+    const baseKey = `${asin}::${keyword}`;
+    if (adTypeFilter === "All") {
+      return `${row.adType || "All"}::${baseKey}`;
+    }
+    return baseKey;
+  });
+  const totalSpend = state.accountTotals?.spend || 0;
+  const totalSales = state.accountTotals?.sales || 0;
+  return Object.entries(grouped).map(([key, items]) => {
+    const summary = computeSummary(items);
+    const sampleRow = items[0] || {};
+    const asin = normalizeAsin(sampleRow.advertisedAsin || "");
+    const keywordLabel = String(sampleRow.keywordText || "").trim() || "Keyword";
+    return {
+      id: `products-keywords:${key}`,
+      label: keywordLabel,
+      keywordLabel,
+      type: "Keyword",
+      adType: sampleRow.adType || "",
+      asin,
+      asinLabel: asin ? getAsinLabel(asin) : "",
+      count: items.length,
+      summary,
+      details: buildCampaignDetailsFromRows(items, "Campaigns for this product keyword"),
+      spendSharePct: totalSpend ? summary.spend / totalSpend : null,
+      salesSharePct: totalSales ? summary.sales / totalSales : null,
+    };
+  });
 }
 
 function buildSearchTermGroupEntities({
@@ -3964,11 +4166,16 @@ function renderTable(rows) {
   const isMatchTypes = state.ui.activeSection === "match-types";
   const isPlacements = state.ui.activeSection === "placements";
   const isProducts = state.ui.activeSection === "products";
+  const isProductKeywords = isProducts && state.ui.productsMode === "keywords";
   const baseFiltered = rows.filter((item) => {
     const matchesLabel = item.label.toLowerCase().includes(search);
     const matchesAsinTag =
       isProducts && String(item.asinLabel || "").toLowerCase().includes(search);
-    return matchesLabel || matchesAsinTag;
+    const matchesProductAsin =
+      isProductKeywords && String(item.asin || "").toLowerCase().includes(search);
+    const matchesKeyword =
+      isProductKeywords && String(item.keywordLabel || "").toLowerCase().includes(search);
+    return matchesLabel || matchesAsinTag || matchesProductAsin || matchesKeyword;
   });
   const noSalesFiltered =
     state.ui.noSalesFilter === "no-sales"
@@ -4083,6 +4290,15 @@ function renderTable(rows) {
             </span>
             <span class="chip campaign-chip">${escapeHtml(campaignLabel)}</span>
           </div>`
+        : isProductKeywords
+          ? `<div class="name-stack">
+              <span class="name-cell">
+                <span class="product-keyword-asin">${escapeHtml(item.asin || "Unmapped")}</span>
+                ${asinNameTag}
+                ${editAsinButton}
+              </span>
+              <span class="product-keyword-text">${escapeHtml(item.keywordLabel || displayLabel)}</span>
+            </div>`
         : isProducts
           ? `<div class="name-stack">
               <span class="name-cell">

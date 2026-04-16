@@ -1500,6 +1500,10 @@ tbody tr {
   align-items: start;
 }
 
+#products-mode-wrap {
+  display: none;
+}
+
 .asin-name-tag {
   display: inline-flex;
   align-items: center;
@@ -1524,6 +1528,17 @@ tbody tr {
   border-radius: var(--r-sm);
   background: #f9fafc;
   color: var(--text-muted);
+}
+
+.product-keyword-asin {
+  font-weight: 600;
+}
+
+.product-keyword-text {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .bidding-chip {

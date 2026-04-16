@@ -1,0 +1,10 @@
+{
+  "name": "amazon-audit-tool",
+  "private": true,
+  "scripts": {
+    "start": "serve -l 3000 --no-port-switching ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
