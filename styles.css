@@ -1522,6 +1522,11 @@ tbody tr {
   white-space: nowrap;
 }
 
+.name-cell .asin-name-tag-inline {
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .campaign-chip {
   font-size: 10px;
   padding: 2px 6px;

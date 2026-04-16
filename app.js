@@ -754,9 +754,14 @@ if (searchTermExport) {
     const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const label = state.ui.searchTermFilter === "asins" ? "asins" : "search-terms";
+    const downloadStem =
+      state.ui.searchTermFilter === "asins"
+        ? "asins"
+        : state.ui.noSalesFilter === "branded"
+          ? "brand-search-terms"
+          : "search-terms";
     link.href = url;
-    link.download = `${label}.txt`;
+    link.download = `${downloadStem}.txt`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -1529,6 +1534,10 @@ function updateWorkspaceHeader() {
       sectionConfig.key === "search-terms" ? "flex" : "none";
   }
   if (searchTermFilter) {
+    const allowedSearchTermFilters = new Set(["terms", "asins"]);
+    if (!allowedSearchTermFilters.has(state.ui.searchTermFilter)) {
+      state.ui.searchTermFilter = "terms";
+    }
     searchTermFilter.value = state.ui.searchTermFilter;
   }
   if (searchTermExport) {
@@ -1575,6 +1584,7 @@ function getPageFilterOptions(sectionConfig) {
       { value: "all", label: "All" },
       { value: "unique", label: "Unique only" },
       { value: "no-sales", label: "Spend, no sales" },
+      { value: "branded", label: "Brand terms" },
     ];
   }
   return [
@@ -2382,14 +2392,7 @@ function buildOwnBrandAsinAttributionRecommendation() {
 }
 
 function buildBrandedTermsAttributionRecommendation() {
-  const brandAliases = dedupeBrandAliases(state.brandAliases).filter(Boolean);
-  if (!brandAliases.length) {
-    return null;
-  }
-
-  const normalizedAliases = brandAliases
-    .map((alias) => normalizeInsightText(alias))
-    .filter(Boolean);
+  const normalizedAliases = getNormalizedBrandAliases();
   if (!normalizedAliases.length) {
     return null;
   }
@@ -2425,6 +2428,7 @@ function buildBrandedTermsAttributionRecommendation() {
       section: "search-terms",
       adTypeFilter: "All",
       searchTermFilter: "terms",
+      noSalesFilter: "branded",
       viewMode: "table",
     },
   };
@@ -2442,6 +2446,24 @@ function collectOwnBrandAsinsFromProducts() {
   return set;
 }
 
+function getCatalogAsinFromSearchTermLabel(label, catalogAsins) {
+  if (!catalogAsins?.size) {
+    return "";
+  }
+  const extracted = extractAsinsFromText(label);
+  for (const asin of extracted) {
+    if (catalogAsins.has(asin)) {
+      return asin;
+    }
+  }
+  const single = normalizeAsin(label);
+  return single && catalogAsins.has(single) ? single : "";
+}
+
+function searchTermLabelMatchesProductCatalogAsin(label, catalogAsins) {
+  return Boolean(getCatalogAsinFromSearchTermLabel(label, catalogAsins));
+}
+
 function normalizeInsightText(value) {
   return String(value || "")
     .toLowerCase()
@@ -2455,6 +2477,22 @@ function isBrandedSearchTerm(term, normalizedAliases) {
     return false;
   }
   return normalizedAliases.some((alias) => normalizedTerm.includes(alias));
+}
+
+function getNormalizedBrandAliases() {
+  const brandAliases = dedupeBrandAliases(state.brandAliases).filter(Boolean);
+  return brandAliases.map((alias) => normalizeInsightText(alias)).filter(Boolean);
+}
+
+function resolveSearchTermsDataEmptyMessage(message) {
+  if (
+    state.ui.activeSection === "search-terms" &&
+    state.ui.noSalesFilter === "branded" &&
+    !getNormalizedBrandAliases().length
+  ) {
+    return "Add brand names for this session to use the brand terms filter (upload step or Brands in the workspace).";
+  }
+  return message;
 }
 
 function renderAiRecommendationsHub(useGrid) {
@@ -3808,6 +3846,8 @@ function buildSearchTermGroupEntities({
   searchTermFilter = "terms",
   noSalesFilter = "all",
 } = {}) {
+  const normalizedBrandAliases =
+    noSalesFilter === "branded" ? getNormalizedBrandAliases() : [];
   const rows = getSearchTermRows().filter((row) => {
     const term = String(row.customerSearchTerm || "").trim();
     if (!term) {
@@ -3817,12 +3857,23 @@ function buildSearchTermGroupEntities({
       return false;
     }
     const isAsin = term.toUpperCase().includes("B0");
-    return searchTermFilter === "asins" ? isAsin : !isAsin;
+    if (searchTermFilter === "asins") {
+      return isAsin;
+    }
+    return !isAsin;
   });
-  const filteredRows =
-    noSalesFilter === "no-sales"
-      ? rows.filter((row) => (row.spend || 0) > 0 && (row.sales || 0) === 0)
-      : rows;
+  let filteredRows = rows;
+  if (noSalesFilter === "no-sales") {
+    filteredRows = rows.filter((row) => (row.spend || 0) > 0 && (row.sales || 0) === 0);
+  } else if (noSalesFilter === "branded") {
+    if (!normalizedBrandAliases.length) {
+      filteredRows = [];
+    } else {
+      filteredRows = rows.filter((row) =>
+        isBrandedSearchTerm(row.customerSearchTerm, normalizedBrandAliases)
+      );
+    }
+  }
   if (!filteredRows.length) {
     return [];
   }
@@ -4106,9 +4157,10 @@ function renderGroupCards(groups) {
       "negative-keywords",
       "products",
     ]);
-    const message = dataEmptySections.has(state.ui.activeSection)
+    let message = dataEmptySections.has(state.ui.activeSection)
       ? `No data for ${adType} found.`
       : "No entities found.";
+    message = resolveSearchTermsDataEmptyMessage(message);
     return `<div class="card"><p class="muted">${escapeHtml(message)}</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
@@ -4156,9 +4208,10 @@ function renderTable(rows) {
       "negative-keywords",
       "products",
     ]);
-    const message = dataEmptySections.has(state.ui.activeSection)
+    let message = dataEmptySections.has(state.ui.activeSection)
       ? `No data for ${adType} found.`
       : "No entities found.";
+    message = resolveSearchTermsDataEmptyMessage(message);
     return `<div class="card"><p class="muted">${escapeHtml(message)}</p></div>`;
   }
   const search = state.ui.searchQuery.toLowerCase();
@@ -4188,6 +4241,10 @@ function renderTable(rows) {
     ? state.ui.tableLimit
     : sorted.length;
   const visible = sorted.slice(0, limit);
+  const productCatalogAsins =
+    isSearchTerms && state.ui.searchTermFilter === "asins"
+      ? collectOwnBrandAsinsFromProducts()
+      : null;
   const clickOnlySectionKeys = new Set(["campaigns", "ad-groups"]);
   const detailedMetricSectionKeys = new Set([
     "match-keywords",
@@ -4273,6 +4330,23 @@ function renderTable(rows) {
         : "";
       const showCampaignChip =
         isSearchTerms && state.ui.searchTermShowCampaignChips && campaignLabel;
+      const catalogAsinForChip =
+        isSearchTerms &&
+        state.ui.searchTermFilter === "asins" &&
+        productCatalogAsins
+          ? getCatalogAsinFromSearchTermLabel(item.label, productCatalogAsins)
+          : "";
+      let catalogBrandChip = "";
+      if (catalogAsinForChip) {
+        const customName = getAsinLabel(catalogAsinForChip);
+        const chipText = customName || "brand";
+        const title = customName
+          ? `ASIN ${catalogAsinForChip} (Products — SP/SD)`
+          : `Advertised on Products (SP/SD) — ASIN ${catalogAsinForChip}. Add a name on the Products page to show it here.`;
+        catalogBrandChip = `<span class="asin-name-tag asin-name-tag-inline" title="${escapeHtml(
+          title
+        )}">${escapeHtml(chipText)}</span>`;
+      }
       const copyValue = String(displayLabel || "");
       const copyButton = showCopyIcon
         ? `<button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
@@ -4286,6 +4360,7 @@ function renderTable(rows) {
         ? `<div class="name-stack">
             <span class="name-cell">
                 ${escapeHtml(displayLabel)}
+                ${catalogBrandChip}
               ${copyButton}
             </span>
             <span class="chip campaign-chip">${escapeHtml(campaignLabel)}</span>
@@ -4309,6 +4384,7 @@ function renderTable(rows) {
             </div>`
           : `<span class="name-cell">
               ${escapeHtml(displayLabel)}
+              ${catalogBrandChip}
               ${copyButton}
             </span>`;
       return `
@@ -5055,7 +5131,9 @@ function filterRowsBySection(sectionConfig) {
       });
     case "search-terms":
       {
-        const filteredRows = searchRows.filter((row) => {
+        const normalizedBrandAliases =
+          state.ui.noSalesFilter === "branded" ? getNormalizedBrandAliases() : [];
+        const typeFiltered = searchRows.filter((row) => {
           const term = String(row.customerSearchTerm || "");
           if (!term) {
             return false;
@@ -5066,7 +5144,15 @@ function filterRowsBySection(sectionConfig) {
           }
           return !isAsin;
         });
-        return filteredRows;
+        if (state.ui.noSalesFilter === "branded") {
+          if (!normalizedBrandAliases.length) {
+            return [];
+          }
+          return typeFiltered.filter((row) =>
+            isBrandedSearchTerm(row.customerSearchTerm, normalizedBrandAliases)
+          );
+        }
+        return typeFiltered;
       }
     case "placements":
       return campaignRows.filter((row) => row.placement);
