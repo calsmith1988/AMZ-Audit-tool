@@ -2424,6 +2424,24 @@ function collectOwnBrandAsinsFromProducts() {
   return set;
 }
 
+function getCatalogAsinFromSearchTermLabel(label, catalogAsins) {
+  if (!catalogAsins?.size) {
+    return "";
+  }
+  const extracted = extractAsinsFromText(label);
+  for (const asin of extracted) {
+    if (catalogAsins.has(asin)) {
+      return asin;
+    }
+  }
+  const single = normalizeAsin(label);
+  return single && catalogAsins.has(single) ? single : "";
+}
+
+function searchTermLabelMatchesProductCatalogAsin(label, catalogAsins) {
+  return Boolean(getCatalogAsinFromSearchTermLabel(label, catalogAsins));
+}
+
 function normalizeInsightText(value) {
   return String(value || "")
     .toLowerCase()
@@ -4016,6 +4034,10 @@ function renderTable(rows) {
     ? state.ui.tableLimit
     : sorted.length;
   const visible = sorted.slice(0, limit);
+  const productCatalogAsins =
+    isSearchTerms && state.ui.searchTermFilter === "asins"
+      ? collectOwnBrandAsinsFromProducts()
+      : null;
   const clickOnlySectionKeys = new Set(["campaigns", "ad-groups"]);
   const detailedMetricSectionKeys = new Set([
     "match-keywords",
@@ -4101,6 +4123,23 @@ function renderTable(rows) {
         : "";
       const showCampaignChip =
         isSearchTerms && state.ui.searchTermShowCampaignChips && campaignLabel;
+      const catalogAsinForChip =
+        isSearchTerms &&
+        state.ui.searchTermFilter === "asins" &&
+        productCatalogAsins
+          ? getCatalogAsinFromSearchTermLabel(item.label, productCatalogAsins)
+          : "";
+      let catalogBrandChip = "";
+      if (catalogAsinForChip) {
+        const customName = getAsinLabel(catalogAsinForChip);
+        const chipText = customName || "brand";
+        const title = customName
+          ? `ASIN ${catalogAsinForChip} (Products — SP/SD)`
+          : `Advertised on Products (SP/SD) — ASIN ${catalogAsinForChip}. Add a name on the Products page to show it here.`;
+        catalogBrandChip = `<span class="asin-name-tag asin-name-tag-inline" title="${escapeHtml(
+          title
+        )}">${escapeHtml(chipText)}</span>`;
+      }
       const copyValue = String(displayLabel || "");
       const copyButton = showCopyIcon
         ? `<button class="copy-btn" data-copy="${escapeHtml(copyValue)}" aria-label="Copy name">
@@ -4114,6 +4153,7 @@ function renderTable(rows) {
         ? `<div class="name-stack">
             <span class="name-cell">
                 ${escapeHtml(displayLabel)}
+                ${catalogBrandChip}
               ${copyButton}
             </span>
             <span class="chip campaign-chip">${escapeHtml(campaignLabel)}</span>
@@ -4128,6 +4168,7 @@ function renderTable(rows) {
             </div>`
           : `<span class="name-cell">
               ${escapeHtml(displayLabel)}
+              ${catalogBrandChip}
               ${copyButton}
             </span>`;
       return `
