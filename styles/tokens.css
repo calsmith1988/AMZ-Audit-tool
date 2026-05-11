@@ -1,24 +1,26 @@
 :root {
   /* Canvas */
-  --bg: #fbfbfc;
+  --bg: #f5f0e8;
 
   /* Surfaces */
-  --surface: #ffffff;
-  --surface-2: #f6f7f9;
-  --surface-3: #f1f3f6;
+  --surface: #fffaf2;
+  --surface-2: #eee7dc;
+  --surface-3: #e4dbce;
 
   /* Lines */
-  --border: rgba(15, 23, 42, 0.10);
-  --border-strong: rgba(15, 23, 42, 0.16);
+  --border: rgba(29, 43, 35, 0.14);
+  --border-strong: rgba(29, 43, 35, 0.24);
 
   /* Text */
-  --text: rgba(15, 23, 42, 0.92);
-  --text-muted: rgba(15, 23, 42, 0.62);
-  --text-faint: rgba(15, 23, 42, 0.45);
+  --text: #1b2a22;
+  --text-muted: rgba(29, 43, 35, 0.68);
+  --text-faint: rgba(29, 43, 35, 0.46);
 
-  /* Accent (swap later) */
-  --accent: #d97706;
-  --accent-soft: rgba(217, 119, 6, 0.16);
+  /* MAZ accent */
+  --accent: #1b2a22;
+  --accent-soft: rgba(27, 42, 34, 0.10);
+  --accent-warm: #b68443;
+  --accent-warm-soft: rgba(182, 132, 67, 0.16);
 
   /* Status */
   --good: #16a34a;
@@ -44,9 +46,9 @@
   --sp-6: 24px;
 
   /* Focus */
-  --focus-ring: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  --focus-ring: 0 0 0 3px rgba(182, 132, 67, 0.26);
 
   /* Table */
-  --row-hover: rgba(15, 23, 42, 0.04);
-  --row-selected: rgba(217, 119, 6, 0.10);
+  --row-hover: rgba(27, 42, 34, 0.05);
+  --row-selected: rgba(182, 132, 67, 0.14);
 }

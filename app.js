@@ -15,6 +15,10 @@ const AI_CHAT_MAX_CONTEXT_CHARS = 60000;
 const AI_CHAT_MAX_HISTORY = 10;
 const ACTION_PLAN_MAX_ITEMS = 20;
 const ASIN_LABEL_STORAGE_KEY = "amazon-audit-tool.asin-labels";
+const SESSION_DB_NAME = "amazon-audit-tool";
+const SESSION_DB_VERSION = 1;
+const SESSION_STORE_NAME = "sessions";
+const SAVED_SESSION_LIMIT = 12;
 
 const state = {
   sessions: [],
@@ -83,6 +87,8 @@ const state = {
     groupedBy: "acos",
   },
 };
+
+let sessionSaveTimer = null;
 
 const fileInput = document.getElementById("file-input");
 const fileMeta = document.getElementById("file-meta");
@@ -381,6 +387,149 @@ function extractBrandAliasesFromSheetData(sheetData) {
   return dedupeBrandAliases(aliases);
 }
 
+function openSessionDb() {
+  if (typeof window === "undefined" || !window.indexedDB) {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(SESSION_DB_NAME, SESSION_DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(SESSION_STORE_NAME)) {
+        db.createObjectStore(SESSION_STORE_NAME, { keyPath: "id" });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function withSessionStore(mode, callback) {
+  const db = await openSessionDb();
+  if (!db) {
+    return null;
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(SESSION_STORE_NAME, mode);
+    const store = transaction.objectStore(SESSION_STORE_NAME);
+    let result;
+    transaction.oncomplete = () => {
+      db.close();
+      resolve(result);
+    };
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error);
+    };
+    result = callback(store);
+  });
+}
+
+function createPersistableSession(session) {
+  if (!session) {
+    return null;
+  }
+  return {
+    id: session.id,
+    name: session.name,
+    date: session.date,
+    notes: session.notes || "",
+    sheetData: session.sheetData || {},
+    mappingSelections: session.mappingSelections || {},
+    results: session.results || null,
+    datasets: session.datasets || [],
+    brandAliases: dedupeBrandAliases(session.brandAliases || []),
+    asinLabels: { ...(session.asinLabels || {}) },
+    currencyCode: session.currencyCode || "GBP",
+    accountTotals: session.accountTotals || null,
+    health: session.health || [],
+    actionPlan: session.actionPlan || null,
+    savedAt: Date.now(),
+  };
+}
+
+async function loadSavedSessions() {
+  try {
+    const saved = await withSessionStore("readonly", (store) => {
+      const request = store.getAll();
+      return new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+    });
+    if (!Array.isArray(saved) || !saved.length) {
+      return;
+    }
+    state.sessions = saved
+      .filter((session) => session?.id && session?.results)
+      .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))
+      .slice(0, SAVED_SESSION_LIMIT)
+      .map((session) => ({
+        ...session,
+        workbook: null,
+        brandAliases: dedupeBrandAliases(session.brandAliases || []),
+        asinLabels: { ...(session.asinLabels || {}) },
+        actionPlan: session.actionPlan || null,
+      }));
+    renderApp();
+  } catch (error) {
+    console.warn("Failed to load saved audit sessions.", error);
+  }
+}
+
+function scheduleSessionSave(sessionId = state.activeSessionId) {
+  if (!sessionId) {
+    return;
+  }
+  window.clearTimeout(sessionSaveTimer);
+  sessionSaveTimer = window.setTimeout(() => {
+    saveSessionToBrowser(sessionId);
+  }, 400);
+}
+
+async function saveSessionToBrowser(sessionId = state.activeSessionId) {
+  const session = state.sessions.find((entry) => entry.id === sessionId);
+  const persistable = createPersistableSession(session);
+  if (!persistable) {
+    return;
+  }
+  try {
+    await withSessionStore("readwrite", (store) => {
+      store.put(persistable);
+      store.getAll().onsuccess = (event) => {
+        const sessions = (event.target.result || [])
+          .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))
+          .slice(SAVED_SESSION_LIMIT);
+        sessions.forEach((oldSession) => store.delete(oldSession.id));
+      };
+    });
+  } catch (error) {
+    console.warn("Failed to save audit session in this browser.", error);
+  }
+}
+
+function syncActiveSessionSnapshot() {
+  if (!state.activeSessionId) {
+    return;
+  }
+  const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
+  if (!session) {
+    return;
+  }
+  session.sheetData = state.sheetData;
+  session.mappingSelections = state.mappingSelections;
+  session.results = state.results;
+  session.datasets = state.datasets;
+  session.brandAliases = dedupeBrandAliases(state.brandAliases);
+  session.asinLabels = { ...state.asinLabels };
+  session.currencyCode = state.currencyCode;
+  session.accountTotals = state.accountTotals;
+  session.health = state.health;
+  session.actionPlan = state.ai.actionPlan;
+  session.savedAt = Date.now();
+  scheduleSessionSave(session.id);
+}
+
 function updateSessionSelect() {
   if (!sessionSelect) {
     return;
@@ -424,15 +573,27 @@ function setActiveSession(sessionId) {
   state.results = session.results;
   state.datasets = session.datasets;
   state.brandAliases = dedupeBrandAliases(session.brandAliases);
+  state.asinLabels = {
+    ...(state.asinLabels || {}),
+    ...(session.asinLabels || {}),
+  };
+  saveAsinLabels();
   state.currencyCode = session.currencyCode || "GBP";
   state.accountTotals = session.accountTotals;
   state.health = session.health;
+  state.ai.actionPlan = session.actionPlan || null;
+  state.ai.actionPlanStatus = session.actionPlan?.items?.length ? "ready" : "";
+  state.ai.actionPlanError = "";
+  state.ai.actionPlanAiStatus = "";
+  state.ai.actionPlanAiError = "";
+  state.ai.actionPlanAiSessionId = session.actionPlan ? sessionId : "";
   syncBrandAliasesInput();
-  resetActionPlan("Session changed. Regenerating action plan...");
   updateSessionSelect();
   renderMappingPanel();
   renderApp();
-  generateActionPlan({ enrich: true });
+  if (!session.actionPlan) {
+    generateActionPlan({ enrich: true });
+  }
 }
 
 function createSessionFromState(meta) {
@@ -456,9 +617,12 @@ function createSessionFromState(meta) {
     currencyCode: state.currencyCode,
     accountTotals: state.accountTotals,
     health: state.health,
+    actionPlan: state.ai.actionPlan,
+    savedAt: Date.now(),
   };
   state.sessions.unshift(session);
   setActiveSession(id);
+  scheduleSessionSave(id);
 }
 
 function clearUploadForm() {
@@ -1159,7 +1323,7 @@ function renderMappingPanel() {
 }
 
 function recompute() {
-  if (!state.workbook) {
+  if (!state.workbook && !Object.keys(state.sheetData || {}).length) {
     return;
   }
 
@@ -1208,6 +1372,7 @@ function recompute() {
   resetAiSummaries("Data updated. Generate summaries to refresh AI insights.");
   generateActionPlan({ enrich: true });
   renderApp();
+  syncActiveSessionSnapshot();
 }
 
 function loadAsinLabels() {
@@ -1277,6 +1442,7 @@ function updateAsinLabel(asin, label) {
   }
   state.asinLabels = nextLabels;
   saveAsinLabels();
+  syncActiveSessionSnapshot();
   return true;
 }
 
@@ -2791,6 +2957,7 @@ function updateActionStatus(id, status) {
     return;
   }
   item.status = status;
+  syncActiveSessionSnapshot();
   renderApp();
 }
 
@@ -2817,6 +2984,7 @@ async function generateActionPlan(options = {}) {
     const plan = buildActionPlan();
     state.ai.actionPlan = plan;
     state.ai.actionPlanStatus = plan.items.length ? "ready" : "empty";
+    syncActiveSessionSnapshot();
     renderApp();
     if (enrich && state.ai.apiKey && plan.items.length) {
       const shouldEnrich =
@@ -3417,6 +3585,7 @@ async function enrichActionPlanWithAi(items) {
     }
     state.ai.actionPlanAiSessionId = state.activeSessionId || "";
     state.ai.actionPlanAiStatus = "ready";
+    syncActiveSessionSnapshot();
     renderApp();
   } catch (error) {
     state.ai.actionPlanAiStatus = "error";
@@ -6456,4 +6625,4 @@ updateAiControls();
 renderReport();
 loadRecommendationRules();
 loadActionRules();
-renderApp();
+loadSavedSessions().finally(() => renderApp());
