@@ -104,7 +104,7 @@ img {
   padding: 6px 10px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: #ffffff;
 }
 
 .adtype-chips {
@@ -644,6 +644,10 @@ img {
   word-break: break-word;
 }
 
+.home-empty-card {
+  background: #ffffff;
+}
+
 .card.compact {
   padding: var(--sp-3);
 }
@@ -894,7 +898,7 @@ img {
   background: var(--surface);
   border-left: 1px solid var(--border);
   padding: var(--sp-4);
-  display: grid;
+  display: none;
   grid-template-rows: auto 1fr;
   gap: var(--sp-3);
   overflow: hidden;
@@ -919,13 +923,13 @@ img {
 }
 
 .app-body.inspector-overlay .inspector.collapsed {
-  display: grid;
+  display: none;
   transform: translateX(calc(100% - 48px));
   background: var(--surface-2);
 }
 
 .app-body.inspector-overlay.inspector-collapsed .workspace {
-  padding-right: calc(var(--sp-5) + 48px);
+  padding-right: var(--sp-5);
 }
 
 .app-body.inspector-overlay .inspector-actions {
@@ -982,7 +986,7 @@ img {
   background: linear-gradient(
     135deg,
     rgba(182, 132, 67, 0.12),
-    rgba(255, 250, 242, 0.72)
+    rgba(255, 255, 255, 0.72)
   );
 }
 
@@ -1727,6 +1731,7 @@ th[data-sort-key] {
   padding: 8px 10px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
+  background: #ffffff;
   font-weight: 400;
   color: var(--text);
   font-family: "Parkinsans", "Segoe UI", system-ui, sans-serif;

@@ -1502,7 +1502,7 @@ function renderHomeView() {
   homeView.classList.toggle("is-active", isActive);
   if (!hasSessions) {
     homeView.innerHTML = `
-      <div class="card">
+      <div class="card home-empty-card">
         <h3 class="card-title">Add your first upload</h3>
         <p class="muted">Upload an Amazon Ads bulksheet to create an audit session.</p>
         <button class="btn primary" id="home-upload-btn">Upload bulksheet</button>
