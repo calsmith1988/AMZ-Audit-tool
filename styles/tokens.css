@@ -1,36 +1,36 @@
 :root {
   /* Canvas */
-  --bg: #f5f0e8;
+  --bg: #f9f7f3;
 
   /* Surfaces */
   --surface: #ffffff;
-  --surface-2: #eee7dc;
-  --surface-3: #e4dbce;
+  --surface-2: #f1ede6;
+  --surface-3: #e6e0d6;
 
   /* Lines */
-  --border: rgba(29, 43, 35, 0.14);
-  --border-strong: rgba(29, 43, 35, 0.24);
+  --border: rgba(45, 60, 50, 0.10);
+  --border-strong: rgba(45, 60, 50, 0.18);
 
   /* Text */
-  --text: #1b2a22;
-  --text-muted: rgba(29, 43, 35, 0.68);
-  --text-faint: rgba(29, 43, 35, 0.46);
+  --text: #2d3c32;
+  --text-muted: rgba(45, 60, 50, 0.62);
+  --text-faint: rgba(45, 60, 50, 0.42);
 
   /* MAZ accent */
-  --accent: #1b2a22;
-  --accent-soft: rgba(27, 42, 34, 0.10);
-  --accent-warm: #b68443;
-  --accent-warm-soft: rgba(182, 132, 67, 0.16);
+  --accent: #2d4a3a;
+  --accent-soft: rgba(45, 74, 58, 0.08);
+  --accent-warm: #c4986a;
+  --accent-warm-soft: rgba(196, 152, 106, 0.14);
 
   /* Status */
-  --good: #16a34a;
-  --warn: #d97706;
-  --bad: #dc2626;
-  --info: #2563eb;
+  --good: #2f8f5e;
+  --warn: #c98a3b;
+  --bad: #c84b4b;
+  --info: #4072b8;
 
   /* Elevation */
-  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --shadow-2: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --shadow-1: 0 1px 2px rgba(45, 60, 50, 0.05);
+  --shadow-2: 0 8px 24px rgba(45, 60, 50, 0.07);
 
   /* Radius */
   --r-sm: 10px;
@@ -46,9 +46,9 @@
   --sp-6: 24px;
 
   /* Focus */
-  --focus-ring: 0 0 0 3px rgba(182, 132, 67, 0.26);
+  --focus-ring: 0 0 0 3px rgba(196, 152, 106, 0.22);
 
   /* Table */
-  --row-hover: rgba(27, 42, 34, 0.05);
-  --row-selected: rgba(182, 132, 67, 0.14);
+  --row-hover: rgba(45, 74, 58, 0.04);
+  --row-selected: rgba(196, 152, 106, 0.12);
 }

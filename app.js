@@ -508,6 +508,51 @@ async function saveSessionToBrowser(sessionId = state.activeSessionId) {
   }
 }
 
+async function deleteSavedSessionRecord(sessionId) {
+  if (!sessionId) {
+    return;
+  }
+  try {
+    await withSessionStore("readwrite", (store) => {
+      store.delete(sessionId);
+    });
+  } catch (error) {
+    console.warn("Failed to delete saved session.", error);
+  }
+}
+
+function deleteSession(sessionId) {
+  if (!sessionId) {
+    return;
+  }
+  const index = state.sessions.findIndex((entry) => entry.id === sessionId);
+  if (index === -1) {
+    return;
+  }
+  state.sessions.splice(index, 1);
+  if (state.activeSessionId === sessionId) {
+    state.activeSessionId = null;
+    state.workbook = null;
+    state.sheetData = {};
+    state.mappingSelections = {};
+    state.results = null;
+    state.datasets = [];
+    state.brandAliases = [];
+    state.currencyCode = "GBP";
+    state.accountTotals = null;
+    state.health = [];
+    state.ai.actionPlan = null;
+    state.ai.actionPlanStatus = "";
+    state.ai.actionPlanError = "";
+    state.ai.actionPlanAiStatus = "";
+    state.ai.actionPlanAiError = "";
+    state.ai.actionPlanAiSessionId = "";
+    syncBrandAliasesInput();
+  }
+  deleteSavedSessionRecord(sessionId);
+  renderApp();
+}
+
 function syncActiveSessionSnapshot() {
   if (!state.activeSessionId) {
     return;
@@ -1527,10 +1572,19 @@ function renderHomeView() {
       const showToggle = note.length > 120;
       const formattedDate = formatDateRangeLabel(session.date);
       return `
-        <div class="card clickable" data-session="${session.id}">
-          <div class="row space-between">
+        <div class="card clickable session-card" data-session="${session.id}">
+          <div class="row space-between session-card-header">
             <strong>${escapeHtml(session.name)}</strong>
-            <span class="muted">${escapeHtml(formattedDate)}</span>
+            <div class="session-card-meta">
+              <span class="muted">${escapeHtml(formattedDate)}</span>
+              <button
+                class="session-delete"
+                type="button"
+                data-session-delete="${session.id}"
+                aria-label="Delete audit"
+                title="Delete audit"
+              >×</button>
+            </div>
           </div>
           <div class="row">
             <span class="chip">Spend ${formatCurrency(summary.spend)}</span>
@@ -1559,6 +1613,21 @@ function renderHomeView() {
   homeView.querySelectorAll("[data-session]").forEach((card) => {
     card.addEventListener("click", () => {
       setActiveSession(card.dataset.session);
+    });
+  });
+  homeView.querySelectorAll("[data-session-delete]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const sessionId = button.dataset.sessionDelete;
+      const session = state.sessions.find((entry) => entry.id === sessionId);
+      const label = session?.name || "this audit";
+      const confirmed = window.confirm(
+        `Delete \"${label}\"? This removes the saved audit from this browser. This cannot be undone.`
+      );
+      if (!confirmed) {
+        return;
+      }
+      deleteSession(sessionId);
     });
   });
   homeView.querySelectorAll("[data-note-toggle]").forEach((button) => {
