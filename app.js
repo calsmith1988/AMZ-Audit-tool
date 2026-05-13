@@ -19,6 +19,8 @@ const SESSION_DB_NAME = "amazon-audit-tool";
 const SESSION_DB_VERSION = 1;
 const SESSION_STORE_NAME = "sessions";
 const SAVED_SESSION_LIMIT = 12;
+const LEAD_CAPTURE_SEEN_KEY = "amazon-audit-tool.lead-capture-seen";
+const FORMSPREE_LEAD_ENDPOINT = "https://formspree.io/f/mrejdovn";
 
 const state = {
   sessions: [],
@@ -152,6 +154,12 @@ const uploadModal = document.getElementById("upload-modal");
 const uploadOpen = document.getElementById("upload-open");
 const uploadClose = document.getElementById("upload-close");
 const uploadCreate = document.getElementById("upload-create");
+const uploadNext = document.getElementById("upload-next");
+const uploadBack = document.getElementById("upload-back");
+const uploadLeadStep = document.getElementById("upload-lead-step");
+const uploadDetailsStep = document.getElementById("upload-details-step");
+const leadEmail = document.getElementById("lead-email");
+const leadBrandName = document.getElementById("lead-brand-name");
 const uploadName = document.getElementById("upload-name");
 const uploadDateStart = document.getElementById("upload-date-start");
 const uploadDateEnd = document.getElementById("upload-date-end");
@@ -172,6 +180,8 @@ const appBody = document.querySelector(".app-body");
 
 let uploadBrandAliasesDraft = [];
 let pendingUploadMeta = null;
+let uploadStep = "lead";
+let latestLeadCapture = null;
 
 function openModal(modal) {
   if (modal) {
@@ -193,7 +203,71 @@ function setCreateLoading(isLoading) {
   uploadCreate.classList.toggle("is-loading", isLoading);
   uploadCreate.innerHTML = isLoading
     ? `<span class="spinner" aria-hidden="true"></span>Creating & building action plan...`
-    : "Create session";
+    : "Continue";
+}
+
+function syncUploadStep() {
+  const isLeadStep = uploadStep === "lead";
+  const leadStepAlreadySeen = hasSeenLeadCaptureStep();
+  uploadLeadStep?.classList.toggle("hidden", !isLeadStep);
+  uploadDetailsStep?.classList.toggle("hidden", isLeadStep);
+  uploadNext?.classList.toggle("hidden", !isLeadStep);
+  uploadBack?.classList.toggle("hidden", isLeadStep || leadStepAlreadySeen);
+  uploadCreate?.classList.toggle("hidden", isLeadStep);
+}
+
+function hasSeenLeadCaptureStep() {
+  try {
+    return window.sessionStorage?.getItem(LEAD_CAPTURE_SEEN_KEY) === "true";
+  } catch (error) {
+    return false;
+  }
+}
+
+function markLeadCaptureStepSeen() {
+  try {
+    window.sessionStorage?.setItem(LEAD_CAPTURE_SEEN_KEY, "true");
+  } catch (error) {
+    // Ignore storage failures; this should never block the upload flow.
+  }
+}
+
+function buildLeadCapturePayload() {
+  const email = leadEmail?.value?.trim() || "";
+  const brandName = leadBrandName?.value?.trim() || "";
+  return {
+    email,
+    brandName,
+    capturedAt: new Date().toISOString(),
+    source: "upload-modal",
+  };
+}
+
+function shouldSubmitLeadCapture(lead) {
+  return Boolean(FORMSPREE_LEAD_ENDPOINT && (lead.email || lead.brandName));
+}
+
+async function submitLeadCapture(lead) {
+  if (!shouldSubmitLeadCapture(lead)) {
+    return;
+  }
+  try {
+    await fetch(FORMSPREE_LEAD_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: lead.email,
+        brand_name: lead.brandName,
+        source: lead.source,
+        captured_at: lead.capturedAt,
+      }),
+    });
+  } catch (error) {
+    console.warn("Lead capture submission failed.", error);
+  }
 }
 
 function syncBrandAliasesInput() {
@@ -663,6 +737,7 @@ function createSessionFromState(meta) {
     accountTotals: state.accountTotals,
     health: state.health,
     actionPlan: state.ai.actionPlan,
+    leadCapture: meta.leadCapture || null,
     savedAt: Date.now(),
   };
   state.sessions.unshift(session);
@@ -671,6 +746,15 @@ function createSessionFromState(meta) {
 }
 
 function clearUploadForm() {
+  uploadStep = "lead";
+  latestLeadCapture = null;
+  syncUploadStep();
+  if (leadEmail) {
+    leadEmail.value = "";
+  }
+  if (leadBrandName) {
+    leadBrandName.value = "";
+  }
   if (fileInput) {
     fileInput.value = "";
   }
@@ -709,7 +793,14 @@ if (uploadOpen) {
       uploadBrandInput.value = "";
     }
     resetPendingUpload();
+    uploadStep = hasSeenLeadCaptureStep() ? "details" : "lead";
+    syncUploadStep();
     openModal(uploadModal);
+    if (uploadStep === "lead") {
+      leadEmail?.focus();
+    } else {
+      uploadName?.focus();
+    }
   });
 }
 if (uploadClose) {
@@ -725,6 +816,32 @@ if (settingsClose) {
   settingsClose.addEventListener("click", () => closeModal(settingsModal));
 }
 
+if (uploadNext) {
+  uploadNext.addEventListener("click", () => {
+    latestLeadCapture = buildLeadCapturePayload();
+    submitLeadCapture(latestLeadCapture);
+    markLeadCaptureStepSeen();
+    const brandName = leadBrandName?.value?.trim() || "";
+    if (brandName && !uploadName?.value?.trim()) {
+      uploadName.value = `${brandName} audit`;
+    }
+    uploadStep = "details";
+    syncUploadStep();
+    uploadName?.focus();
+  });
+}
+
+if (uploadBack) {
+  uploadBack.addEventListener("click", () => {
+    if (hasSeenLeadCaptureStep()) {
+      return;
+    }
+    uploadStep = "lead";
+    syncUploadStep();
+    leadEmail?.focus();
+  });
+}
+
 if (uploadCreate) {
   uploadCreate.addEventListener("click", async () => {
     if (!fileInput?.files?.length) {
@@ -737,6 +854,7 @@ if (uploadCreate) {
       dateStart: uploadDateStart?.value,
       dateEnd: uploadDateEnd?.value,
       notes: uploadNotes?.value?.trim(),
+      leadCapture: latestLeadCapture || buildLeadCapturePayload(),
     };
     pendingUploadMeta = meta;
     await loadWorkbook(fileInput.files[0]);
@@ -2007,14 +2125,14 @@ function renderOverview() {
       </div>
       <div class="card overview-panel">
         <div class="row space-between overview-panel-header">
-          <strong>Top 4 Sales Targets</strong>
+          <strong>Top 3 Sales Targets</strong>
           <span class="chip">${escapeHtml(selectedAdType)}</span>
         </div>
         ${renderOverviewTargetList(topSalesTargets, "sales")}
       </div>
       <div class="card overview-panel">
         <div class="row space-between overview-panel-header">
-          <strong>Top 4 Spend Targets</strong>
+          <strong>Top 3 Spend Targets</strong>
           <span class="chip">${escapeHtml(selectedAdType)}</span>
         </div>
         ${renderOverviewTargetList(topSpendTargets, "spend")}
@@ -3568,23 +3686,23 @@ function getMatchSectionKey(row) {
   if (row.entityNormalized !== "product targeting") {
     return null;
   }
-  const matchType = String(row.matchType || "");
-  if (matchType === "ASINs") {
+  const matchType = normalizeValue(row.matchType || "");
+  if (matchType === normalizeValue("ASINs")) {
     return "match-asins";
   }
-  if (matchType === "ASINs Expanded") {
+  if (matchType === normalizeValue("ASINs Expanded")) {
     return "match-asins-expanded";
   }
-  if (matchType === "Auto") {
+  if (matchType === normalizeValue("Auto")) {
     return "match-auto";
   }
-  if (matchType === "Category") {
+  if (matchType === normalizeValue("Category")) {
     return "match-categories";
   }
-  if (matchType === "Related Keywords") {
+  if (matchType === normalizeValue("Related Keywords")) {
     return "match-related";
   }
-  return null;
+  return "match-types";
 }
 
 function getTargetLabelForRow(row) {
@@ -5713,7 +5831,7 @@ function buildOverviewTopTargets(adType, metricKey) {
     .filter(Boolean)
     .filter((entry) => (entry.summary?.[metricKey] || 0) > 0)
     .sort((a, b) => (b.summary?.[metricKey] || 0) - (a.summary?.[metricKey] || 0))
-    .slice(0, 4);
+    .slice(0, 3);
 }
 
 function buildOverviewZeroSaleSpend() {

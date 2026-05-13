@@ -25,6 +25,10 @@ img {
   max-width: 100%;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .muted {
   color: var(--text-muted);
   font-size: 12px;
@@ -81,6 +85,7 @@ img {
   letter-spacing: 0.08em;
   text-transform: none;
   font-family: Georgia, "Times New Roman", serif;
+  color: #2d4a3a;
   color: var(--accent);
 }
 
@@ -145,7 +150,9 @@ img {
 }
 
 .adtype-chip.active {
+  background-color: #2d4a3a;
   background-color: var(--accent);
+  border-color: #2d4a3a;
   border-color: var(--accent);
   color: #fff;
 }
@@ -506,7 +513,7 @@ img {
 }
 
 .workspace {
-  background: var(--bg);
+  background: var(--surface);
   padding: var(--sp-5);
   overflow-y: auto;
   min-width: 0;
@@ -916,7 +923,8 @@ img {
   gap: 6px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--surface-2);
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
   font-size: 11px;
   color: var(--text-muted);
 }
@@ -924,7 +932,7 @@ img {
 .metric-pill {
   padding: 4px 10px;
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--chip-bg);
   border: 1px solid var(--border);
   font-size: 12px;
 }
@@ -1063,13 +1071,13 @@ img {
 
 .ai-tag.insight {
   background: var(--accent-warm-soft);
-  border-color: rgba(196, 152, 106, 0.32);
+  border: 1px solid rgba(196, 152, 106, 0.32);
   color: var(--accent-warm);
 }
 
 .ai-tag.strategy {
   background: rgba(15, 118, 110, 0.12);
-  border-color: rgba(15, 118, 110, 0.35);
+  border: 1px solid rgba(15, 118, 110, 0.35);
   color: #0f766e;
 }
 
@@ -1103,7 +1111,7 @@ img {
 .ai-chat-chips .chip {
   cursor: pointer;
   border: 1px solid var(--border);
-  background: var(--surface-2);
+  background: var(--chip-bg);
   border-radius: var(--r-sm);
   height: 28px;
   padding: 0 10px;
@@ -1292,6 +1300,8 @@ img {
 }
 
 .btn {
+  appearance: none;
+  -webkit-appearance: none;
   border: 1px solid var(--border);
   background: var(--surface);
   padding: 8px 14px;
@@ -1318,8 +1328,11 @@ img {
 }
 
 .btn.primary {
+  background: #2d4a3a;
   background: var(--accent);
+  border-color: #2d4a3a;
   border-color: var(--accent);
+  color: #ffffff;
   color: var(--surface);
 }
 
@@ -1562,7 +1575,7 @@ tbody tr {
   padding: 2px 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: var(--surface-2);
+  background: var(--chip-bg);
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.2;
@@ -1580,7 +1593,7 @@ tbody tr {
   font-size: 10px;
   padding: 2px 6px;
   border-radius: var(--r-sm);
-  background: var(--surface-2);
+  background: var(--chip-bg);
   color: var(--text-muted);
 }
 
@@ -1756,6 +1769,11 @@ th[data-sort-key] {
 }
 
 .modal-body {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+.upload-step {
   display: grid;
   gap: var(--sp-3);
 }

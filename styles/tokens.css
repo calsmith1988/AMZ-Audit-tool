@@ -7,6 +7,9 @@
   --surface-2: #f1ede6;
   --surface-3: #e6e0d6;
 
+  /* Pills / neutral chips (campaign tags, table chips, etc.) */
+  --chip-bg: #fdfcfa;
+
   /* Lines */
   --border: rgba(45, 60, 50, 0.10);
   --border-strong: rgba(45, 60, 50, 0.18);

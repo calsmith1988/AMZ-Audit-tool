@@ -314,22 +314,32 @@
           <button id="upload-close" class="btn ghost icon" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
-          <label class="muted" for="upload-name">Session name</label>
-          <input id="upload-name" type="text" placeholder="January audit" />
-          <label class="muted">Session date range</label>
-          <div class="row">
-            <input id="upload-date-start" type="date" />
-            <span class="muted">to</span>
-            <input id="upload-date-end" type="date" />
-          </div>
-          <label class="muted" for="upload-notes">Notes (optional)</label>
-          <textarea id="upload-notes" rows="3" placeholder="Notes"></textarea>
-          <label class="muted" for="file-input">Bulk sheet</label>
-          <input id="file-input" type="file" accept=".xlsx,.xls" />
-          <div id="file-meta" class="muted"></div>
-          <div id="file-warning" class="muted"></div>
+          <section id="upload-lead-step" class="upload-step">
+            <label class="muted" for="lead-email">Email address</label>
+            <input id="lead-email" type="email" placeholder="you@example.com" autocomplete="email" />
+            <label class="muted" for="lead-brand-name">Brand name</label>
+            <input id="lead-brand-name" type="text" placeholder="e.g. Chaos Club" autocomplete="organization" />
+          </section>
+          <section id="upload-details-step" class="upload-step hidden">
+            <label class="muted" for="upload-name">Session name</label>
+            <input id="upload-name" type="text" placeholder="January audit" />
+            <label class="muted">Session date range</label>
+            <div class="row">
+              <input id="upload-date-start" type="date" />
+              <span class="muted">to</span>
+              <input id="upload-date-end" type="date" />
+            </div>
+            <label class="muted" for="upload-notes">Notes (optional)</label>
+            <textarea id="upload-notes" rows="3" placeholder="Notes"></textarea>
+            <label class="muted" for="file-input">Bulk sheet</label>
+            <input id="file-input" type="file" accept=".xlsx,.xls" />
+            <div id="file-meta" class="muted"></div>
+            <div id="file-warning" class="muted"></div>
+          </section>
         </div>
         <div class="modal-footer">
+          <button id="upload-back" class="btn ghost hidden" type="button">Back</button>
+          <button id="upload-next" class="btn primary" type="button">Next</button>
           <button id="upload-create" class="btn primary">Continue</button>
         </div>
       </div>
