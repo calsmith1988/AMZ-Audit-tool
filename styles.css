@@ -34,6 +34,17 @@ img {
   font-size: 12px;
 }
 
+.text-link {
+  color: var(--text);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.text-link:hover {
+  color: var(--accent);
+}
+
 .app-shell {
   display: grid;
   min-height: 100vh;

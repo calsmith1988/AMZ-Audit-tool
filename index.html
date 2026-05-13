@@ -331,10 +331,11 @@
             <label class="muted" for="upload-notes">Notes (optional)</label>
             <textarea id="upload-notes" rows="3" placeholder="Notes"></textarea>
             <label class="muted" for="file-input">Bulk sheet</label>
+            <input id="file-input" type="file" accept=".xlsx,.xls" />
             <div class="row">
               <span class="muted">Need help downloading your bulk sheet?</span>
               <a
-                class="btn ghost"
+                class="text-link"
                 href="https://www.loom.com/share/ffefb18ed2c04460af1909f6e5b0a901"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -342,7 +343,6 @@
                 Watch bulk sheet guide
               </a>
             </div>
-            <input id="file-input" type="file" accept=".xlsx,.xls" />
             <div id="file-meta" class="muted"></div>
             <div id="file-warning" class="muted"></div>
           </section>
