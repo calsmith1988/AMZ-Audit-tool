@@ -21,6 +21,7 @@ const SESSION_STORE_NAME = "sessions";
 const SAVED_SESSION_LIMIT = 12;
 const LEAD_CAPTURE_SEEN_KEY = "amazon-audit-tool.lead-capture-seen";
 const FORMSPREE_LEAD_ENDPOINT = "https://formspree.io/f/mrejdovn";
+const DEFAULT_CURRENCY_CODE = "USD";
 
 const state = {
   sessions: [],
@@ -32,7 +33,8 @@ const state = {
   datasets: [],
   brandAliases: [],
   asinLabels: loadAsinLabels(),
-  currencyCode: "GBP",
+  currencyCode: DEFAULT_CURRENCY_CODE,
+  currencyOverride: "",
   accountTotals: null,
   health: [],
   ai: {
@@ -100,6 +102,7 @@ const autoMapBtn = document.getElementById("auto-map-btn");
 const saveMapBtn = document.getElementById("save-map-btn");
 const mapUpload = document.getElementById("map-upload");
 const brandInput = document.getElementById("brand-input");
+const currencySelect = document.getElementById("currency-select");
 const aiKeyInput = document.getElementById("ai-key-input");
 const aiModelInput = document.getElementById("ai-model-input");
 const aiGenerateBtn = document.getElementById("ai-generate-btn");
@@ -273,6 +276,12 @@ async function submitLeadCapture(lead) {
 function syncBrandAliasesInput() {
   if (brandInput) {
     brandInput.value = (state.brandAliases || []).join(", ");
+  }
+}
+
+function syncCurrencyInput() {
+  if (currencySelect) {
+    currencySelect.value = state.currencyCode || DEFAULT_CURRENCY_CODE;
   }
 }
 
@@ -514,7 +523,8 @@ function createPersistableSession(session) {
     datasets: session.datasets || [],
     brandAliases: dedupeBrandAliases(session.brandAliases || []),
     asinLabels: { ...(session.asinLabels || {}) },
-    currencyCode: session.currencyCode || "GBP",
+    currencyCode: session.currencyCode || DEFAULT_CURRENCY_CODE,
+    currencyOverride: session.currencyOverride || "",
     accountTotals: session.accountTotals || null,
     health: session.health || [],
     actionPlan: session.actionPlan || null,
@@ -612,7 +622,8 @@ function deleteSession(sessionId) {
     state.results = null;
     state.datasets = [];
     state.brandAliases = [];
-    state.currencyCode = "GBP";
+    state.currencyCode = DEFAULT_CURRENCY_CODE;
+    state.currencyOverride = "";
     state.accountTotals = null;
     state.health = [];
     state.ai.actionPlan = null;
@@ -642,6 +653,7 @@ function syncActiveSessionSnapshot() {
   session.brandAliases = dedupeBrandAliases(state.brandAliases);
   session.asinLabels = { ...state.asinLabels };
   session.currencyCode = state.currencyCode;
+  session.currencyOverride = state.currencyOverride;
   session.accountTotals = state.accountTotals;
   session.health = state.health;
   session.actionPlan = state.ai.actionPlan;
@@ -697,7 +709,8 @@ function setActiveSession(sessionId) {
     ...(session.asinLabels || {}),
   };
   saveAsinLabels();
-  state.currencyCode = session.currencyCode || "GBP";
+  state.currencyOverride = session.currencyOverride || "";
+  state.currencyCode = session.currencyCode || state.currencyOverride || DEFAULT_CURRENCY_CODE;
   state.accountTotals = session.accountTotals;
   state.health = session.health;
   state.ai.actionPlan = session.actionPlan || null;
@@ -707,6 +720,7 @@ function setActiveSession(sessionId) {
   state.ai.actionPlanAiError = "";
   state.ai.actionPlanAiSessionId = session.actionPlan ? sessionId : "";
   syncBrandAliasesInput();
+  syncCurrencyInput();
   updateSessionSelect();
   renderMappingPanel();
   renderApp();
@@ -810,7 +824,10 @@ if (uploadClose) {
   });
 }
 if (settingsOpen) {
-  settingsOpen.addEventListener("click", () => openModal(settingsModal));
+  settingsOpen.addEventListener("click", () => {
+    syncCurrencyInput();
+    openModal(settingsModal);
+  });
 }
 if (settingsClose) {
   settingsClose.addEventListener("click", () => closeModal(settingsModal));
@@ -1261,6 +1278,15 @@ if (brandInput) {
   });
 }
 
+if (currencySelect) {
+  currencySelect.addEventListener("change", () => {
+    state.currencyOverride = currencySelect.value || DEFAULT_CURRENCY_CODE;
+    state.currencyCode = state.currencyOverride;
+    syncActiveSessionSnapshot();
+    renderApp();
+  });
+}
+
 if (aiKeyInput) {
   aiKeyInput.addEventListener("input", () => {
     state.ai.apiKey = aiKeyInput.value.trim();
@@ -1312,10 +1338,12 @@ async function loadWorkbook(file) {
       fileMeta.textContent = `${file.name} • ${workbook.SheetNames.length} sheets`;
     }
     autoMapAllSheets();
-    state.currencyCode = detectCurrencyCodeFromSheetData(
+    state.currencyOverride = "";
+    state.currencyCode = resolveCurrencyCode(
       state.sheetData,
       state.mappingSelections
     );
+    syncCurrencyInput();
     renderMappingPanel();
   } catch (error) {
     if (fileMeta) {
@@ -1522,10 +1550,11 @@ function recompute() {
     brandAliases: state.brandAliases,
   });
   state.datasets = datasets;
-  state.currencyCode = detectCurrencyCodeFromSheetData(
+  state.currencyCode = resolveCurrencyCode(
     state.sheetData,
     state.mappingSelections
   );
+  syncCurrencyInput();
   state.accountTotals = computeSummary(
     datasets
       .filter((set) => set.def.kind === "campaign")
@@ -6089,7 +6118,7 @@ function formatCurrency(value) {
     Math.abs(numeric) < 100
       ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
       : { minimumFractionDigits: 0, maximumFractionDigits: 0 };
-  const currencyCode = String(state.currencyCode || "GBP").toUpperCase();
+  const currencyCode = String(state.currencyCode || DEFAULT_CURRENCY_CODE).toUpperCase();
   try {
     const formatter = new Intl.NumberFormat("en-GB", {
       style: "currency",
@@ -6113,7 +6142,7 @@ function detectCurrencyCodeFromSheetData(sheetData, mappingSelections = {}) {
 
   const portfolioEntry = entries.find(([sheetName]) => isPortfolioSheetName(sheetName));
   if (!portfolioEntry) {
-    return "GBP";
+    return DEFAULT_CURRENCY_CODE;
   }
   const [sheetName, sheet] = portfolioEntry;
   const mapping = mappingSelections[sheetName] || {};
@@ -6149,7 +6178,14 @@ function detectCurrencyCodeFromSheetData(sheetData, mappingSelections = {}) {
     }
   }
 
-  return "GBP";
+  return DEFAULT_CURRENCY_CODE;
+}
+
+function resolveCurrencyCode(sheetData, mappingSelections = {}) {
+  if (state.currencyOverride) {
+    return state.currencyOverride;
+  }
+  return detectCurrencyCodeFromSheetData(sheetData, mappingSelections) || DEFAULT_CURRENCY_CODE;
 }
 
 function resolveSheetNameForDef(def, sheetData) {
